@@ -1,0 +1,10 @@
+[2024-11-10 16:08:49,556] multiqc.config                                     [INFO   ]  Loading config settings from: multiqc_config.yml
+[2024-11-10 16:08:49,810] multiqc.core.file_search                           [INFO   ]  Search path: /home/ute/Documents/bioinformatic_analyses/2024-05_LargeRubiscoLibrary/work/78/d6323607561657427d9c32d55e2dbe
+[2024-11-10 16:08:52,516] multiqc.modules.custom_content.custom_content      [WARNING]  HTML plot type found with more than one dataset in nf-core-crispriscreen-summary
+[2024-11-10 16:08:52,517] multiqc.modules.custom_content.custom_content      [INFO   ]  nf-core-crispriscreen-summary: Found 1 sample (html)
+[2024-11-10 16:08:52,517] multiqc.modules.custom_content.custom_content      [WARNING]  HTML plot type found with more than one dataset in nf-core-crispriscreen-methods-description
+[2024-11-10 16:08:52,517] multiqc.modules.custom_content.custom_content      [INFO   ]  nf-core-crispriscreen-methods-description: Found 1 sample (html)
+[2024-11-10 16:08:52,533] multiqc.modules.featurecounts.featurecounts        [INFO   ]  Found 96 reports
+[2024-11-10 16:08:52,679] multiqc.modules.cutadapt.cutadapt                  [INFO   ]  Found 96 reports
+[2024-11-10 16:08:53,087] multiqc.modules.fastqc.fastqc                      [INFO   ]  Found 96 reports
+[2024-11-10 16:08:53,279] multiqc.core.write_results                         [INFO   ]  Rendering plots. Export plots to formats png, svg, pdf is requested, so it might take a while. To disable plot export, set `export_plots: false` in config, or remove the `--export-plots` command line flag

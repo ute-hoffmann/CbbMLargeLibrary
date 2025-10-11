@@ -1,0 +1,1550 @@
+---
+title: "Analysis of Illumina seqeuncing of pooled growth of large CbbM library"
+author: 'SYSTEM: `r version[13]`'
+date: 'DATE: `r Sys.time()`'
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  pdf_document:
+    toc: yes
+  html_notebook:
+    theme: cosmo
+    toc: yes
+    number_sections: yes
+params:
+  cpus: 2
+  input_dir: ./
+  meta: ''
+---
+
+```{r load-required-packages, include = FALSE}
+library(ggplot2)
+library(tidyverse)
+library(DESeq2)
+library(DescTools)
+library(colorblindr) #https://github.com/clauswilke/colorblindr
+library(tidyr)
+library(ggrepel)
+library(dplyr)
+library(ggnewscale)
+library(Heatplus) # bioconductor
+library(ComplexHeatmap) # bioconductor
+library(edgeR)
+library(Mfuzz)
+library(ggVennDiagram)
+library(pheatmap)
+library(plyr)
+library(RColorBrewer)
+```
+
+```{r color-definitions, message=FALSE, echo=FALSE}
+col_combi_sat = c("combinatorial"="#69b3a2", "saturational"="#404080", "WT"="black")
+col_conditions = c("CL_N2"="#e69f00ff", "CL_O2"="#0272b2ff", "LD"="#00563e99")
+```
+
+# Brief description of data set
+
+A library of Rubisco variants based on a mutant variant of *Gallionella* sp. CbbM was designed. The CbbM variant is two amino acid exchanges away from the wild-type sequence and was identified as part of a small library which was used to establish the screening system. For reasons of simplicity, in the following, "WT" will refer to this variant, which is the "base" of the whole library.
+The large library consists of 67 positions, which were separately exchanged by any other possible amino acid and a combinatorial part, which is based on seven amino acid positions, which were exchanged, in a combinatorial fashion, by a few specific possible residues per position.
+
+Both parts of the library were designed with the help of EVmutation and DeepSequence, which use phylogenetic information to predict beneficial amino acid exchanges. The exact manner how predictions were performed is described along with the small library the "base" mutant variant is derived from.
+
+The complete library was transformed into a *Synechocystis* host strain, in which transcription of the endogenous Rubisco transcript can be inhibited by the induction of a CRISPR inhibition system. Each variant is represented by one or several clones, which can be distinguished on base of their N20 barcodes. The pooled library of these strains was grown in 8 replicates at different gas feed and light conditions in turbidostat mode for approximately 10 generations (CL_N2: constant light 300 µE, 5% CO2, 95% N2, 0% O2, CL_O2: constant light 300 µE, 5% CO2, 75% N2, 20% O2, LD: light-dark cycles, 5% CO2, 75% N2, 20% O2). By taking samples for Illumina sequencing regularly, we were able to track almost all variants present and assign fitness values.
+
+Note that amino acid numbering in the following are based on the sequence including the N-Strep tag.
+
+Fitness values are given as normalized values, i.e. a value of 1.0 equals the fitness of the base variant (actually the underlying CbbM variant which is two amino acid exchanges away from wild-type CbbM) and 0.0 equals the median value of K214 variants present in the data set. K214 is the carbamylated lysine which is essential for catalysis. Exchanges of this lysine residue should result in catalytically inactive enzyme. Mutant variants with worse fitness values than K214 substitutions can be considered catalytically inactive.
+
+In a first step, all data of relevance will be loaded.
+
+```{r load-required-datasets, message=FALSE, echo=FALSE}
+count_matrix <- read_tsv("../results/prepare/all_counts.tsv")
+count_matrix$Gene <- NULL
+fitness_data <-  read_tsv("../WeightingStrategies_fitnessCalc/result_lfcSE_Pearson_Weighted_sameWeight.tsv")
+satu_combi <- read_tsv("../input/combi_satur_mutatios.tsv", col_names = c("sgRNA_target", "category"))
+fitness_data <- left_join(fitness_data, satu_combi)
+number_muts <- read_tsv("../input/number_mutations_variants.tsv")
+fitness_data <- left_join(fitness_data, number_muts)
+
+df_samplesheet <- readr::read_csv("../input/samplesheet_1stCultiv_2ndCultiv.csv", col_types = cols()) %>%
+    select(all_of(c("sample", "condition", "replicate", "time", "group", "reference_group"))) %>%
+    dplyr::mutate(group = factor(`group`))
+df_samplesheet$name <- paste("gen,", df_samplesheet$time, ",r,", df_samplesheet$replicate, ",cond,", df_samplesheet$condition, sep="")
+
+tunnel_mutations <- read_tsv("../input/list_tunnel_mutations_woOverlapDeepSequence.txt", col_names = c("noNStrep", "aa_pos_withStrep"))
+fitness_data$baseAA <- substr(fitness_data$sgRNA_target, 1, nchar(fitness_data$sgRNA_target)-1)
+fitness_data <- subset(fitness_data, !fitness_data$baseAA %in% tunnel_mutations$aa_pos_withStrep)
+
+EVcouplings_predict <- read_tsv("../insilico_predictions/EVcouplings/variants_scored_EVcouplings.tsv")
+names(EVcouplings_predict) <- c("sgRNA_target", "EVcoup_predict")
+fitness_data <- left_join(fitness_data, EVcouplings_predict)
+
+#DeepSeq_predict_single <- read_delim("../insilico_predictions/DeepSequence/2023-04-20_single_mutant_matrix_Gallionella_Rubisco_I_samples-10_elbo_predictions.csv", col_names = c("sgRNA_target", "DeepSeq_predict_single"), delim=";")
+#fitness_data <- left_join(fitness_data, DeepSeq_predict)
+
+DeepSeq_predict_complete <- read_tsv("../insilico_predictions/DeepSequence/2024-07-30_variants_scored_DeepSequence.tsv", col_names = c("sgRNA_target", "DeepSeq_predict"))
+fitness_data <- left_join(fitness_data, DeepSeq_predict_complete)
+
+# run additiveModel.py if re-analysing
+additive_scores_CL_N2 <- read_tsv("../insilico_predictions/additiveModel/results/combinatorial_variants_additiveScores_CL_N2.csv")[,c(2,4)]
+additive_scores_CL_N2$condition <- "CL_N2"
+additive_scores_CL_O2 <- read_tsv("../insilico_predictions/additiveModel/results/combinatorial_variants_additiveScores_CL_O2.csv")[,c(2,4)]
+additive_scores_CL_O2$condition <- "CL_O2"
+additive_scores_LD <- read_tsv("../insilico_predictions/additiveModel/results/combinatorial_variants_additiveScores_LD.csv")[,c(2,4)]
+additive_scores_LD$condition <- "LD"
+additive_scores <- bind_rows(additive_scores_CL_N2, additive_scores_CL_O2, additive_scores_LD)
+fitness_data <- left_join(fitness_data, additive_scores)
+
+conservation_scores <- read_csv("../input/EVcouplings_DeepSequ/TARGET_b0.3_single_mutant_matrix.csv")[,c(2,7)]
+names(conservation_scores) <- c("sgRNA_target", "conservationScore")
+fitness_data <- left_join(fitness_data, conservation_scores)
+
+relSAS_scores <- read_tsv("../lfcSE_weighted_outputImages/svg/Fig1/Structure_PyMol/relSAS_Gallionella_CbbM-I.tsv")
+fitness_data <- left_join(fitness_data, relSAS_scores)
+
+dimer <- read_tsv("../lfcSE_weighted_outputImages/svg/Fig1/Structure_PyMol/dimer_aa.tsv")
+fitness_data <- left_join(fitness_data, dimer)
+
+# get MSA Transformer ensemble predictions from ProteinNPT, run change_mutant_name_CBBM_TRAIN.py on file to get only predictions and mutant name, load and merge
+MSAtransf <- read_tsv("../input/CBBM_TRAIN_only_predictAndMutant.tsv")
+fitness_data <- left_join(fitness_data, MSAtransf)
+
+proteinNPT <- read_tsv("../input/ProteinNPT_mutant_fitnessPredictions.tsv")
+proteinNPT <- pivot_longer(proteinNPT, cols=c(2,3,4), names_to="condition", values_to="proteinNPT_predict")
+fitness_data <- left_join(fitness_data, proteinNPT)
+```
+
+# Diagnostic plots for cultivation
+
+## Sample-sample correlation
+
+When clustering according to similarity, replicates from the same gas conditions have a tendency to cluster together, irrespective of their light condition (constant light or light-dark). This is also the case at generation 0 - even at generation 0, samples are more similar to other samples from the same gas feed than to generation 0 samples of the other round of cultivation (first round of cultivation was CL_N2; CL_O2 and LD were run in a second round of cultivations).
+
+There is some clear separation between samples from earlier time points and samples from later time points.
+
+```{r, fig.width = 12, fig.height = 10, warning = FALSE, message=FALSE}
+df_counts <- tidyr::pivot_longer(count_matrix,
+    cols = 2:ncol(count_matrix),
+    names_to = "sample", values_to = "n_reads"
+)
+
+# sort
+df_counts <- arrange(df_counts, sample)
+df_counts <- left_join(df_samplesheet, df_counts)
+
+df_correlation <- df_counts[,c("name", "sgRNA", "n_reads")] %>%
+    tidyr::pivot_wider(names_from = "name", values_from = "n_reads") %>%
+    dplyr::select(-c(1)) %>%
+    cor()
+```
+
+```{r, fig.width = 12, fig.height = 10, warning = FALSE, message=FALSE}
+annotation_days = data.frame(row.names=unique(row.names(df_correlation)), generation=as.character(c(rep(c("0", "3.7", "8.6", "10.1"), 2), rep(c("10.1", "8.6", "3.7", "0"), 2), rep(c("3.7", "10.1", "0", "8.6"), 2), "8.6", "0", "10.1", "3.7", "3.7", "0", "0", "5.4", "6.4", "7.7", "10.3", "0", "5.4", "0", "5.4", rep(c("0", "5.4", "6.4", "7.7", "10.3"), 5), rep(c("0", "4.9", "8.6", "12.5"),8))), condition=c(rep("CL_N2", 30), rep("LD", 34), rep("CL_O2", 32)), replicate=as.character(c(rep("1", 4), rep("2", 4), rep("3", 4), rep("4", 4), rep("5", 4), rep("6", 4), rep("7", 4), rep("8", 2), rep("1", 5), rep("2", 2), rep("3", 2), rep("4", 5), rep("5", 5), rep("6", 5), rep("7", 5), rep("8", 5), rep("1", 4), rep("2", 4), rep("3", 4), rep("4", 4), rep("5", 4), rep("6", 4), rep("7", 4), rep("8", 4))), gas_feed=c(rep("N2", 30), rep("O2", 66)))
+
+# https://stackoverflow.com/questions/41628450/r-pheatmap-change-annotation-colors-and-prevent-graphics-window-from-popping-up
+# choose gradient of colors for generations
+# e.g. Tol from https://davidmathlogic.com/colorblind/#%23D81B60-%231E88E5-%23FFC107-%23004D40
+okabe <- c("#f0e442ff", "#e69f00ff", "#d55e00ff", "#cc79a7ff", "#009e73ff", "#56b4e9ff", "#0072b2ff", "#aaaaaaff")
+generations <- okabe[c(1, 2, 3, 3, 4, 4, 4, 5, 5, 5)]
+# generations "0"    "3.7"  "8.6"  "10.1" "5.4"  "6.4"  "7.7"  "10.3" "4.9"  "12.5"
+names(generations) <- c("0", "3.7", "4.9","5.4", "6.4", "7.7", "8.6", "10.1", "10.3", "12.5")
+# replicates 1 to 8
+rep <- okabe[1:8]
+names(rep) <- as.character(1:8)
+feed <- okabe[c(2, 7)]
+names(feed) <- c("N2", "O2")
+annotation_color_list <- list(condition=col_conditions, replicate=rep, generation=generations, gas_feed=feed)
+
+# https://bioinformatics.stackexchange.com/questions/22502/manually-set-range-of-colour-scale-in-pheatmap-in-r
+color.divisions <- 100
+
+p <- pheatmap(df_correlation, display_numbers=TRUE, treeheight_col=0, cutree_rows = 6, cutree_cols = 6, annotation_row = annotation_days, annotation_colors = annotation_color_list, breaks = seq(0,1, length.out=(color.divisions + 1)), fontsize=6)
+ggsave("../lfcSE_weighted_outputImages/pdf/correlation_samples_clustering_numbers.pdf", plot=p, width=20, height=20)
+
+p <- pheatmap(df_correlation, display_numbers=FALSE, treeheight_col=0, cutree_rows = 6, cutree_cols = 6, annotation_row = annotation_days, annotation_colors = annotation_color_list, breaks = seq(0,1, length.out=(color.divisions + 1)), fontsize=6)
+p
+ggsave("../lfcSE_weighted_outputImages/png/correlation_samples_clustering.png", plot=p, width=11.5, height=10)
+ggsave("../lfcSE_weighted_outputImages/pdf/correlation_samples_clustering.pdf", plot=p, width=11.5, height=10)
+```
+
+## Check equal distribution in time 0 samples
+
+For checking the distribution at time point 0, two t = 0 replicates from each condition were used. 
+
+```{r prepare-count-matrix-DESeq2}
+count_matrix_time0 <- as.data.frame(data.frame(sgRNA=count_matrix$sgRNA, LD_1=count_matrix$LD1A1, LD_2=count_matrix$LD1A6, O2_1=count_matrix$O22A1, O2_2=count_matrix$O22A5, N2_1=count_matrix$highN4A1, N2_2=count_matrix$highN4A5))
+
+row.names(count_matrix_time0) <- count_matrix_time0$sgRNA
+count_matrix_time0$sgRNA <- NULL
+
+design_matrix <- data.frame(group=rep("t0", 6))
+row.names(design_matrix) = names(count_matrix_time0)
+```
+
+DESeq2 is used to normalize among the replicates.
+
+```{r normalize-using-DESeq2, message=FALSE}
+ddstime0 <- DESeqDataSetFromMatrix(
+  countData = count_matrix_time0,
+  colData = design_matrix,
+  design = ~ 1)
+ddstime0 <- estimateSizeFactors(ddstime0)
+counts_norm_ddstime0 <- as.data.frame(counts(ddstime0, normalized=TRUE))
+```
+
+When log10-transforming the x-scale of the mean of counts in the different samples, the distribution looks as if mean values were almost normally distributed. This is, if I am not mistaken, relatively typical for count data. (Count data does usually follow a Poisson distribution, which looks more "normal" when being log-transformed)
+
+```{r message=FALSE, warnings=FALSE}
+df_plot <- data.frame(mut=row.names(counts_norm_ddstime0), mean_count=apply(counts_norm_ddstime0, 1, mean))
+p <- ggplot(df_plot, aes(x=mean_count)) + geom_histogram() + theme_light() + scale_x_log10()
+p
+```
+
+The plot below shows mean and stdev of the count of 100 randomly picked barcodes present in the samples at time point 0 and confirms the histogram from above. There are outliers with many counts or almost no counts and a huge bulk of barcodes with a similar count. According to the histogram above, this bulk is approx. at a mean count of 10.
+
+```{r message=FALSE}
+df_plot <- counts_norm_ddstime0[round(runif(n=100, min=1, max=nrow(counts_norm_ddstime0))),]
+df_plot <- data.frame(mut=row.names(df_plot), mean_count=apply(df_plot, 1, mean), stdev=apply(df_plot,1,sd))
+p <- ggplot(df_plot) + geom_bar(aes(x=reorder(mut, mean_count), y=mean_count), stat="identity") + geom_errorbar(aes(x=mut, ymin=mean_count-stdev, ymax=mean_count+stdev), width=0.4) + theme_light() + xlab("100 randomly picked barcodes") + ylab("Mean of normalized read counts") + labs(title="Randomly picked barcodes and their average abundance") + theme(axis.text.x=element_blank())
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/time0_distribution.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/time0_distribution.png", plot=p)
+```
+
+Calculate the Gini index of a few of the samples, a value of 0 reflects complete equality, a value of 1 maximal inequality. Gini indices for all samples are also calculated as part of the whole nf-crispriscreen pipeline. With values of approx. 0.55 to 0.6, barcodes at time point 0 are not completely inequally distributed, but also far from perfect equality.
+
+```{r Gini-index}
+Gini(counts_norm_ddstime0$LD_1, unbiased=FALSE)
+Gini(counts_norm_ddstime0$LD_2, unbiased=FALSE)
+Gini(counts_norm_ddstime0$O2_1, unbiased=FALSE)
+Gini(counts_norm_ddstime0$O2_2, unbiased=FALSE)
+Gini(counts_norm_ddstime0$N2_1, unbiased=FALSE)
+Gini(counts_norm_ddstime0$N2_2, unbiased=FALSE)
+Gini(df_plot$mean_count, unbiased=FALSE)
+```
+
+# Exploratory data analysis
+
+## Overview fitness distribution
+
+Normalization: WT is set to "1", and the median of K214 substitutions as "0". For all three conditions, the data set shows a bimodal distribution. This is most pronounced for the continuous light, N2 feed condition.
+
+```{r message=FALSE}
+plot_subset <- unique(fitness_data[,c("sgRNA_target", "norm", "p_fit_adj_WT", "condition")])
+
+p <- ggplot(plot_subset, aes(x=norm, group=condition, fill=condition, color=condition, linetype=condition)) + geom_density(adjust=1.5, alpha=.4) + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank()) + scale_fill_manual(values=col_conditions, labels = c("Continuous light, N2 feed", "Continuous light, O2 feed", "Light-dark cycles, O2 feed")) + scale_color_manual(values=col_conditions, labels = c("Continuous light, N2 feed", "Continuous light, O2 feed", "Light-dark cycles, O2 feed")) + scale_linetype_manual(values=c("CL_N2"="solid", "CL_O2"="dashed", "LD"="dotted"), labels=c("Continuous light, N2 feed", "Continuous light, O2 feed", "Light-dark cycles, O2 feed")) + labs(title="Complete CbbM library", x="Normalized fitness value") 
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/whole_library_densityplot.pdf", plot=p, width=11.5, height=8)
+ggsave("../lfcSE_weighted_outputImages/png/whole_library_densityplot.png", plot=p, width=11.5, height=8)
+```
+
+```{r}
+for(cond in unique(plot_subset$condition)){
+  print(cond)
+  temp_subs <- subset(plot_subset, plot_subset$condition==cond)
+  print(nrow(temp_subs))
+  print("Above 1")
+  print(nrow(subset(temp_subs, temp_subs$norm > 1)))
+  print("Above 1, percentage")
+  print(nrow(subset(temp_subs, temp_subs$norm > 1))/nrow(temp_subs))
+  print("Above 1 and significantly higher than WT")
+  print(nrow(subset(temp_subs, temp_subs$norm > 1 & temp_subs$p_fit_adj_WT < 0.05)))
+  print("Above 1 and significantly higher than WT, percentage")
+  print(nrow(subset(temp_subs, temp_subs$norm > 1 & temp_subs$p_fit_adj_WT < 0.05))/nrow(temp_subs))
+  print("Below 0")
+  print(nrow(subset(temp_subs, temp_subs$norm < 0)))
+  print("Below 0, percentage")
+  print(nrow(subset(temp_subs, temp_subs$norm < 0))/nrow(temp_subs))
+}
+```
+
+When only checking mutant variants present in the combinatorial library with more than a single amino acid exchange, we still observe a clear bimodal distribution very similar to the one of the complete data set.
+
+```{r message=FALSE, warnings=FALSE}
+plot_subset <- unique(subset(fitness_data, (fitness_data$category %in% c("combinatorial")) & fitness_data$number_muts > 1)[,c("sgRNA_target", "norm", "p_fit_adj_WT", "condition")])
+length(unique(plot_subset$sgRNA_target))
+length(unique(plot_subset$sgRNA_target))/length(unique(fitness_data$sgRNA_target))
+
+p <- ggplot(plot_subset, aes(x=norm, group=condition, fill=condition, color=condition, linetype=condition)) + geom_density(adjust=1.5, alpha=.4) + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank()) + scale_linetype_manual(values=c("CL_N2"="solid", "CL_O2"="dashed", "LD"="dotted"), labels=c("Continuous light, N2 feed", "Continuous light, O2 feed", "Light-dark cycles, O2 feed")) + scale_fill_manual(values=col_conditions, labels = c("Continuous light, N2 feed", "Continuous light, O2 feed", "Light-dark cycles, O2 feed")) + scale_color_manual(values=col_conditions, labels = c("Continuous light, N2 feed", "Continuous light, O2 feed", "Light-dark cycles, O2 feed")) + labs(title="Combinatorial CbbM library with more than one exchange", x="Normalized fitness value")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/combinatorial_w-oSingles_library_densityplot.pdf", plot=p, width=11.5, height=8)
+ggsave("../lfcSE_weighted_outputImages/pdf/combinatorial_w-oSingles_library_densityplot.png", plot=p, width=11.5, height=8)
+```
+
+```{r}
+for(cond in unique(plot_subset$condition)){
+  print(cond)
+  temp_subs <- subset(plot_subset, plot_subset$condition==cond)
+  print(nrow(temp_subs))
+  print("Above 1")
+  print(nrow(subset(temp_subs, temp_subs$norm > 1)))
+  print("Above 1, percentage")
+  print(nrow(subset(temp_subs, temp_subs$norm > 1))/nrow(temp_subs))
+  print("Above 1 and significantly higher than WT")
+  print(nrow(subset(temp_subs, temp_subs$norm > 1 & temp_subs$p_fit_adj_WT < 0.05)))
+  print("Above 1 and significantly higher than WT, percentage")
+  print(nrow(subset(temp_subs, temp_subs$norm > 1 & temp_subs$p_fit_adj_WT < 0.05))/nrow(temp_subs))
+  print("Below 0")
+  print(nrow(subset(temp_subs, temp_subs$norm < 0)))
+  print("Below 0, percentage")
+  print(nrow(subset(temp_subs, temp_subs$norm < 0))/nrow(temp_subs))
+}
+```
+
+
+```{r message=FALSE}
+plot_subset <- unique(subset(fitness_data, fitness_data$category %in% c("saturational", "combiANDsatur"))[,c("sgRNA_target", "norm", "p_fit_adj_WT", "num_barcodes", "condition")])
+length(unique(plot_subset$sgRNA_target))
+length(unique(plot_subset$sgRNA_target))/length(unique(fitness_data$sgRNA_target))
+
+p <- ggplot(plot_subset, aes(x=norm, group=condition, fill=condition, color=condition, linetype=condition)) + geom_density(adjust=1.5, alpha=.4) + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank()) + scale_fill_manual(values=col_conditions, labels = c("Continuous light, N2 feed", "Continuous light, O2 feed", "Light-dark cycles, O2 feed")) + scale_color_manual(values=col_conditions, labels = c("Continuous light, N2 feed", "Continuous light, O2 feed", "Light-dark cycles, O2 feed")) + labs(title="Saturational CbbM library", x="Normalized fitness value") + scale_linetype_manual(values=c("CL_N2"="solid", "CL_O2"="dashed", "LD"="dotted"), labels=c("Continuous light, N2 feed", "Continuous light, O2 feed", "Light-dark cycles, O2 feed"))
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/saturational_library_densityplot.pdf", plot=p, width=11.5, height=8)
+ggsave("../lfcSE_weighted_outputImages/pdf/saturational_library_densityplot.png", plot=p, width=11.5, height=8)
+```
+
+```{r}
+for(cond in unique(plot_subset$condition)){
+  print(cond)
+  temp_subs <- subset(plot_subset, plot_subset$condition==cond)
+  print(nrow(temp_subs))
+  print("Above 1")
+  print(nrow(subset(temp_subs, temp_subs$norm > 1)))
+  print("Above 1, percentage")
+  print(nrow(subset(temp_subs, temp_subs$norm > 1))/nrow(temp_subs))
+  print("Above 1 and significantly higher than WT")
+  print(nrow(subset(temp_subs, temp_subs$norm > 1 & temp_subs$p_fit_adj_WT < 0.05)))
+  print("Above 1 and significantly higher than WT, percentage")
+  print(nrow(subset(temp_subs, temp_subs$norm > 1 & temp_subs$p_fit_adj_WT < 0.05))/nrow(temp_subs))
+  print("Below 0")
+  print(nrow(subset(temp_subs, temp_subs$norm < 0)))
+  print("Below 0, percentage")
+  print(nrow(subset(temp_subs, temp_subs$norm < 0))/nrow(temp_subs))
+}
+```
+
+When comparing fitness values between the combinatorial and saturational part directly, it becomes obvious that the saturational part contains, relatively speaking, more variants with functional Rubisco variants, i.e. the right peak of the bimodal distribution is higher than the left peak contrasting to the case in the combinatorial part of the library.
+
+```{r message=FALSE, warnings=FALSE}
+fitness_data_2 <- subset(fitness_data, fitness_data$category!="notExpected" & fitness_data$category!="WT")
+fitness_data_2[fitness_data_2$category=="combiANDsatur",]$category <- "saturational"
+fitness_data_2 <- unique(fitness_data_2[,c("sgRNA_target", "norm", "p_fit_adj_WT", "category", "condition")])
+p <- ggplot(fitness_data_2, aes(x=norm, fill=category, color=category, linetype=category)) + geom_density(adjust=1.5, alpha=.4) + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank()) + scale_fill_manual(values=c(col_combi_sat), labels = c("Combinatorial", "Saturational")) + scale_color_manual(values=c(col_combi_sat), labels = c("Combinatorial", "Saturational")) + labs(x="Normalized fitness value") + scale_linetype_manual(values=c("combinatorial"="solid", "saturational"="dashed"), labels=c("Combinatorial", "Saturational")) + facet_wrap(~condition) + theme(panel.grid.minor = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8))
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/density_compareCombiSatur.pdf", plot=p, width=10, height=4, units="cm")
+ggsave("../lfcSE_weighted_outputImages/png/density_compareCombiSatur.png", plot=p)
+```
+
+## Overview growth all variants
+
+The mean of the log2FC of each variant present in the library is shown. Pink shows K214H, which is under all three conditions the K214 variant performing best, black the WT variant. Purple shows K214D and K214I, the two K214 variants performing worst. There is a clear separation of different variants, WT is clearly gaining in relative abundance and the investigated K214 variants are dropping. This confirms successful selection according to Rubisco activity.
+
+```{r message=FALSE}
+fit_factor <- fitness_data
+fit_factor$sgRNA_target <- factor(fit_factor$sgRNA_target, levels=c(unique(subset(fit_factor, !fit_factor$sgRNA_target %in% c("WT", "K214R"))$sgRNA_target), "WT", "K214R"))
+p <- ggplot(fit_factor, aes(x=time, y=wmean_log2FoldChange, group=sgRNA_target, color=sgRNA_target, linewidth=sgRNA_target, alpha=sgRNA_target)) + geom_line() + scale_color_manual(values=c("K214R"="purple", "WT"="black"), na.value="lightgray") + theme_light() + xlab("Time (generations)") + ylab("log2FC(to g=0)") + scale_discrete_manual("linewidth", values=c("K214R"=0.3, "WT"=0.3), na.value=0.1) + scale_alpha_manual(values=c("K214R"=1, "WT"=1), na.value=0.5) + facet_wrap(~condition) + theme(panel.grid.minor = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title=element_blank())
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/all_sgRNAtargets_timeLinePlot.pdf", plot=p, height=1.5, width=5, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/all_sgRNAtargets_timeLinePlot.png", plot=p, height=1.5, width=5, units="in")
+```
+
+## Plot WT and K214 variants
+
+```{r plotting-functions-moreColor-CI, echo=FALSE}
+ylims <- c(-6.7, 8.0)
+
+lineplot_CVinterval_severalColours_meanlog2 <- function(df_to_plot){
+  se_vector <- df_to_plot$sd_log2FoldChange/sqrt(df_to_plot$num_barcodes)
+  se_vector[is.na(se_vector)] <- df_to_plot$lfcSE[is.na(se_vector)]
+  df_to_plot$conf <- qnorm(0.975)*se_vector
+  plot_p <- ggplot(df_to_plot, aes(x=time, y=wmean_log2FoldChange, ymin=wmean_log2FoldChange-conf, ymax=wmean_log2FoldChange+conf, group=sgRNA_target, color=factor(sgRNA_target), fill=factor(sgRNA_target), linetype=factor(sgRNA_target))) + new_scale("alpha") + geom_line(linewidth=0.3) + geom_ribbon(linetype=0, alpha=0.25) + theme_light() + xlab("Time (generations)") + ylab("Log2FC") + coord_cartesian(ylim=ylims) + facet_wrap(~condition) + theme(panel.grid.minor = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title = element_blank())
+  return(plot_p)
+}
+
+lineplot_severalColours_meanlog2 <- function(df_to_plot){
+  plot_p <- ggplot(df_to_plot, aes(x=time, y=wmean_log2FoldChange, color=factor(sgRNA_target))) + new_scale("alpha") + geom_line(linewidth=0.3) + theme_light() + xlab("Time (generations)") + ylab("Log2FC") + facet_wrap(~condition) + theme(panel.grid.minor = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + coord_cartesian(ylim=ylims)
+  return(plot_p)
+}
+
+lineplot_CVinterval_severalColours_log2 <- function(df_to_plot){
+  df_to_plot$conf <- qnorm(0.975)*df_to_plot$lfcSE
+  alpha_values <- 1-df_to_plot$weight_lfcSE
+  names(alpha_values) <- df_to_plot$sgRNA
+  plot_p <- ggplot(df_to_plot, aes(x=time, y=log2FoldChange, ymin=log2FoldChange-conf, ymax=log2FoldChange+conf, group=sgRNA, color=factor(sgRNA), fill=factor(sgRNA))) + new_scale("alpha") + geom_line(linewidth=0.3) + geom_ribbon(linetype=0, aes(alpha=sgRNA)) + scale_alpha_manual(values=alpha_values) + theme_light() + xlab("Time (generations)") + ylab("Log2FC") + facet_wrap(~condition)  + theme(panel.grid.minor = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + coord_cartesian(ylim=ylims)
+  return(plot_p)
+}
+
+lineplot_severalColours_log2 <- function(df_to_plot){
+  plot_p <- ggplot(df_to_plot, aes(x=time, y=log2FoldChange, group=sgRNA, color=factor(sgRNA))) + new_scale("alpha") + geom_line(linewidth=0.3) + theme_light() + xlab("Time (generations)") + ylab("Log2FC") + facet_wrap(~condition) + theme(panel.grid.minor = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + coord_cartesian(ylim=ylims)
+  return(plot_p)
+}
+```
+
+The 95% confidence interval for the weighted mean log2FC of all WT barcodes is relatively small, meaning that we can rely relatively well on the respective data. In total, 30 different barcodes for WT were taken into account. These were the highest 30 barcodes assigned to the WT variant present in the complete data set. The high number of WT barcodes as well as their high count numbers both contribute to a reliable estimate of the corresponding fitness.
+
+```{r  message=FALSE}
+WT_subset <- unique(subset(fitness_data, fitness_data$sgRNA_target=="WT")[,c("num_barcodes", "sd_log2FoldChange", "lfcSE", "time", "wmean_log2FoldChange", "sgRNA_target", "sgRNA", "log2FoldChange", "weight_lfcSE", "condition")])
+p <- lineplot_CVinterval_severalColours_meanlog2(WT_subset) + labs(title="WT with 95% CI")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/WT_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/WT_timeLinePlot.png", plot=p)
+```
+
+Here, the log2FC charts of the different barcodes used for determining WT data are plotted. 95% confidence intervals are colored according to the standard error of the log2FC - the more transparent, the higher the standard error and the other way round. The barcodes deviating from the overall standard have higher standard errors than the barcodes which are close to the overall mean. In black, the overall trend is added.
+
+It seems as if most of the 30 barcodes agreed well. Note that, for continuous light and an O2-containing feed, several barcodes go a bit down for the last time point. It seems as if selection was already lost then or at least got much weaker.
+
+```{r message=FALSE, warnings=FALSE}
+p <- lineplot_CVinterval_severalColours_log2(WT_subset) + labs(title="WT barcodes with 95% CI") + geom_line(aes(x=time, y=wmean_log2FoldChange, group=sgRNA_target), color="black")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/WT_barcodes_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/WT_barcodes_timeLinePlot.png", plot=p)
+
+lineplot_severalColours_log2(WT_subset) + labs(title="WT barcodes") + geom_line(aes(x=time, y=wmean_log2FoldChange, group=sgRNA_target), color="black")
+```
+
+Here, all K214 mutant variants and their weighted mean log2FoldChange are plotted. All have a tendency to decrease in relative abundance. For continuous light and an O2-containing gas feed, the last time point looks as if selection got worse. Same also holds, to some degree, for the N2-containing feed. K214H goes pretty wild in the LD condition.
+
+```{r message=FALSE, warnings=FALSE}
+K214_subset <- unique(subset(fitness_data, grepl("K214", fitness_data$sgRNA_target))[,c("num_barcodes", "sd_log2FoldChange", "lfcSE", "time", "wmean_log2FoldChange", "sgRNA_target", "sgRNA", "log2FoldChange", "weight_lfcSE", "condition", "norm")])
+p <- lineplot_CVinterval_severalColours_meanlog2(K214_subset) + labs(title="K214 variants with 95% CI")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/K214_variants_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/K214_variants_timeLinePlot.png", plot=p)
+
+lineplot_severalColours_meanlog2(K214_subset) + labs(title="K214 variants")
+```
+
+K214H is the K214 variant with the highest fitness score under all three investigated conditions. Its fitness value was determined on basis of 3 barcodes, of which one shows a slower decrease than the other 2 (in CL_O2 and LD, it does not even show a decrease), but has a lower standard error. In black, the weighted mean log2FC is shown.
+
+```{r message=FALSE, warnings=FALSE}
+K214H_subset <- unique(subset(fitness_data, grepl("K214H", fitness_data$sgRNA_target))[,c("num_barcodes", "sd_log2FoldChange", "lfcSE", "time", "wmean_log2FoldChange", "sgRNA_target", "sgRNA", "log2FoldChange", "weight_lfcSE", "condition")])
+p <- lineplot_CVinterval_severalColours_log2(K214H_subset) + labs(title="K214H barcodes with 95% CI") + geom_line(aes(x=time, y=wmean_log2FoldChange, group=sgRNA_target), color="black")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/K214H_barcodes_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/K214H_barcodes_timeLinePlot.png", plot=p)
+```
+
+Compare K214H to WT. In LD, due to the strongly rising barcode, K214H and WT are not significantly different (if we take 95% confidence intervals as measure for "Could it even be a significant difference").
+
+```{r message=FALSE, warnings=FALSE}
+p <- lineplot_CVinterval_severalColours_meanlog2(bind_rows(WT_subset,K214H_subset)) + labs(title="K214H and WT")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/WT_K214H_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/WT_K214H_timeLinePlot.png", plot=p)
+```
+
+K214 variants K214D (LD), K214R (CL_N2) and K214E (CL_O2) were the ones which were used for median normalization (compare compare_weightingStrategies_2ndRound.html). All look as if they were good negative controls in subsequent plots. K214R is closest to a normalized fitness value of 0 of these three. When calculating the absolute distance to 0 of all variants in the normalized data set, K214L also seems to be a good candidate. Since K214R has a lower Gini index and a comparable absolute distance to 0 in all data sets, K214R will be plotted as negative control subsequently.
+
+```{r message=FALSE, warnings=FALSE}
+K214DRT_subset <- unique(subset(fitness_data, fitness_data$sgRNA_target %in% c("K214D", "K214R", "K214E", "K214L"))[,c("num_barcodes", "sd_log2FoldChange", "lfcSE", "time", "wmean_log2FoldChange", "sgRNA_target", "sgRNA", "log2FoldChange", "weight_lfcSE", "condition", "norm")])
+p <- lineplot_CVinterval_severalColours_meanlog2(bind_rows(WT_subset,K214DRT_subset)) + labs(title="K214 variants and WT")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/WT_K214DRTL_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/WT_K214DRTL_timeLinePlot.png", plot=p)
+
+pivot_wider(unique(K214DRT_subset[,c("sgRNA_target", "condition", "norm")]), values_from=norm, names_from=condition)
+
+K214_set <- pivot_wider(unique(K214_subset[,c("sgRNA_target", "condition", "norm")]), values_from=norm, names_from=condition)
+K214_set$sum <- apply(abs(K214_set[,c(2:4)]), 1, sum)
+K214_set$gini <- apply(abs(K214_set[,c(2:4)]), 1, Gini)
+K214_set[order(K214_set$sum),]
+
+K214L_subset <- unique(subset(fitness_data, fitness_data$sgRNA_target %in% c("K214L", "K214R"))[,c("num_barcodes", "sd_log2FoldChange", "lfcSE", "time", "wmean_log2FoldChange", "sgRNA_target", "sgRNA", "log2FoldChange", "weight_lfcSE", "condition", "norm")])
+lineplot_CVinterval_severalColours_meanlog2(bind_rows(WT_subset,K214L_subset)) + labs(title="K214L, K214R and WT")
+neg_control_K214 <- "K214R"
+```
+
+All K214 variants and WT
+
+```{r message=FALSE, warnings=FALSE}
+p <- lineplot_severalColours_meanlog2(bind_rows(K214_subset, WT_subset)) + labs(title="K214 variants and WT") + scale_color_manual(values=c("WT"="black"), na.value="lightgray")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/WT_K214_variants_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/WT_K214_variants_timeLinePlot.png", plot=p)
+```
+
+## Barplots number mutations ~ fitness
+
+When investigating all mutant variants present in the library, including the ones which occurred spontaneously, there is a clear trend observable that the more amino acid exchanges/mutations were introduced, the lower the mean fitness. This matches well with what was reported in literature before.
+
+```{r message=FALSE, warnings=FALSE}
+red_fitness <- unique(fitness_data[c("sgRNA_target", "mean_fitness", "condition", "category", "number_muts", "norm", "p_fit_adj_WT", "num_barcodes")])
+p <- ggplot(red_fitness, aes(x=number_muts, y=norm, group=number_muts, colour=number_muts, fill=number_muts)) + geom_point(size=0.1, position=position_jitterdodge(dodge.width=0.9), color="#4a4a4aff") + theme_light() + stat_summary(fun="mean", geom="bar", alpha=0.3, position=position_dodge(width=0.9), linewidth=0, color="#4a4a4aff", fill="#4a4a4aff") + ylab("Weighted mean fitness") + facet_wrap(~condition)+ theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8))
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/bar_fitness_data_numberMuts_complete.pdf", p, width=30, height=18, units="cm")
+ggsave("../lfcSE_weighted_outputImages/png/bar_fitness_data_numberMuts_complete.png", p, width=30, height=18, units="cm")
+```
+
+When checking the whole "expected" library, i.e. the combination of saturational and combinatorial library, this trend is still observable.
+
+```{r bar_fitness_data_N2, message=FALSE, warnings=FALSE}
+expected_red_fitness <- subset(red_fitness, !red_fitness$category=="notExpected")
+p <- ggplot(expected_red_fitness, aes(x=number_muts, y=norm, fill=number_muts, colour=number_muts, group=number_muts)) + stat_summary(fun="mean", geom="bar", alpha=0.3, position=position_dodge(width=0.9), linewidth=0, color="#4a4a4aff", fill="#4a4a4aff") + geom_point(size=0.05, alpha=0.7, position=position_jitterdodge(dodge.width=0.9), color="#4a4a4aff") + theme_light() + ylab("Normalized fitness score") + xlab("Number of intoduced amino acid exchanges") + theme(legend.position="none") + facet_wrap(~condition) + coord_cartesian(xlim=c(-0.2,7.2))+ theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8))
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/bar_fitness_data_numberMuts_onlyExpected.pdf", p, width=5, height=2.4, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/bar_fitness_data_numberMuts_onlyExpected.png", p, width=5, height=3, units="in")
+```
+
+When only comparing the amino acid exchanges present in the combinatorial library, the overall trend that introducing another amino acid exchange decreases the fitness value becomes even clearer. At the same time, additionally introduced exchanges do not reduce the maximum fitness value.
+
+```{r bar_fitness_data_onlyCombi, message=FALSE, warnings=FALSE}
+combinatorial_wide <- subset(expected_red_fitness, !expected_red_fitness$category=="saturational")
+lm_fitness_data <- lm(norm ~ number_muts, combinatorial_wide)
+summary(lm_fitness_data)
+
+lm_fitness_data <- lm(norm ~ number_muts, subset(combinatorial_wide, combinatorial_wide$condition == "CL_N2"))
+summary(lm_fitness_data)
+
+lm_fitness_data <- lm(norm ~ number_muts, subset(combinatorial_wide, combinatorial_wide$condition == "CL_O2"))
+summary(lm_fitness_data)
+
+lm_fitness_data <- lm(norm ~ number_muts, subset(combinatorial_wide, combinatorial_wide$condition == "LD"))
+summary(lm_fitness_data)
+
+p <- ggplot(combinatorial_wide, aes(x=number_muts, y=norm, fill=number_muts, colour=number_muts)) + stat_summary(fun="mean", geom="bar", alpha=0.3, position=position_dodge(width=0.9), linewidth=0, color="#4a4a4aff", fill="#4a4a4aff") + geom_point(size=0.1, position=position_jitterdodge(dodge.width=0.9), color="#4a4a4aff") + theme_light() + ylab("Normalized fitness score")+ theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + facet_wrap(~condition) + coord_cartesian(xlim=c(-0.2,7.2))
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/bar_fitness_data_numberMuts_onlyCombi.pdf", p, width=30, height=18, units="cm")
+ggsave("../lfcSE_weighted_outputImages/png/bar_fitness_data_numberMuts_onlyCombi.png", p, width=30, height=18, units="cm")
+```
+
+When only checking variants with fitness values significantly different to the "wild-type" sequence, this pattern gets dampened, even though there is still some trend in this direction observable with more and more variants showing relatively high scores.
+
+```{r message=FALSE, warnings=FALSE}
+combinatorial_wide <- subset(combinatorial_wide, combinatorial_wide$p_fit_adj_WT<0.05)
+
+p <- ggplot(combinatorial_wide, aes(x=number_muts, y=norm, fill=number_muts, colour=number_muts)) + geom_point(size=0.1, position=position_jitterdodge(dodge.width=0.9)) + theme_light() + stat_summary(fun="mean", geom="bar", alpha=0.3, position=position_dodge(width=0.9), linewidth=0) + ylab("Weighted mean fitness") + facet_wrap(~condition) + coord_cartesian(xlim=c(0.8,7.2))+ theme(panel.grid.minor =element_blank(), legend.title = element_blank())+ theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8))
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/bar_fitness_data_numberMuts_onlyCombi_onlySignificant.pdf", p, width=18, height=18, units="cm")
+ggsave("../lfcSE_weighted_outputImages/png/bar_fitness_data_numberMuts_onlyCombi_onlySignificant.png", p, width=18, height=18, units="cm")
+```
+
+## Correlation with different zero-shot predictors and similar
+
+There are different ways of predicting the effect of higher order mutant variants. For designing the library, no prior knowledge was available. For this reason, zero-shot predictions using EVmutation and DeepSequence were performed. When data for single-site mutants is available, an additive model can be used that is assuming independence of different amino acid exchanges. Predictions of this model were calculated using python.
+
+```{r}
+combi_sat_alpha <- c(combinatorial=0.2, saturational=0.2, WT=1.0)
+combi_sat_shape <- c(combinatorial=16, saturational=16, WT=4)
+combi_sat_size <- c(combinatorial=0.4, saturational=0.4, WT=0.8)
+dotsize <- 0.02
+pointshape <- 16
+alphalevel <- 0.4
+line_width_for_plots <- 0.4
+red_fitness <- unique(fitness_data[c("sgRNA_target", "norm", "condition", "category", "EVcoup_predict", "DeepSeq_predict", "MSA_Transform", "additive_score", "proteinNPT_predict")])
+red_fitness[red_fitness$category=="combiANDsatur",]$category <- "saturational"
+red_fitness <- subset(red_fitness, red_fitness$category != "notExpected")
+red_fitness[red_fitness$category=="WT",]$EVcoup_predict <- 0
+```
+
+```{r}
+red_fitness_noNA_DeepSeq <- subset(red_fitness, !is.na(red_fitness$DeepSeq_predict))
+
+for(cat in c("combinatorial", "saturational")){
+  print(cat)
+  subset_forLoop <- subset(red_fitness_noNA_DeepSeq, red_fitness_noNA_DeepSeq$category==cat & red_fitness_noNA_DeepSeq$condition=="CL_N2")
+  lm <- lm(DeepSeq_predict~EVcoup_predict, subset_forLoop)
+  correlation <- cor.test(subset_forLoop$EVcoup_predict, subset_forLoop$DeepSeq_predict, method = 'spearman')
+  print(correlation)
+  correlation <- cor.test(subset_forLoop$EVcoup_predict, subset_forLoop$DeepSeq_predict, method = 'pearson')
+  print(correlation)
+}
+
+scat <- ggplot(red_fitness_noNA_DeepSeq, aes(x=EVcoup_predict, y=DeepSeq_predict, color=category, alpha=category, linetype=category, shape=category, size=category)) + geom_point() + scale_shape_manual(values=combi_sat_shape) + scale_size_manual(values=combi_sat_size) + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + theme_light() + xlab("EVcouplings fitness prediction") + ylab("DeepSequence fitness prediction") + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title = element_blank())
+scat
+ggsave("../lfcSE_weighted_outputImages/pdf/scatter_DeepSeq_EVcoup.pdf", scat, width=2, height=2, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/scatter_DeepSeq_EVcoup.png", scat, width=2, height=2, units="in")
+```
+
+```{r}
+for(cat in c("combinatorial", "saturational")){
+  print(cat)
+  subset_forLoop <- subset(red_fitness_noNA_DeepSeq, red_fitness_noNA_DeepSeq$category==cat & red_fitness_noNA_DeepSeq$condition=="CL_N2")
+  print(nrow(subset_forLoop))
+  correlation <- cor.test(subset_forLoop$EVcoup_predict, subset_forLoop$MSA_Transform, method = 'spearman')
+  print(correlation)
+  correlation <- cor.test(subset_forLoop$EVcoup_predict, subset_forLoop$MSA_Transform, method = 'pearson')
+  print(correlation)
+}
+
+scat <- ggplot(red_fitness_noNA_DeepSeq, aes(x=EVcoup_predict, y=MSA_Transform, color=category, alpha=category, linetype=category, shape=category, size=category)) + geom_point() + scale_shape_manual(values=combi_sat_shape) + scale_size_manual(values=combi_sat_size) + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + theme_light() + xlab("EVcouplings fitness prediction") + ylab("MSA Transform fitness prediction") + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title = element_blank())
+scat
+ggsave("../lfcSE_weighted_outputImages/pdf/scatter_MSA_Transform_EVcoup.pdf", scat, width=2, height=2, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/scatter_MSA_Transform_EVcoup.png", scat, width=2, height=2, units="in")
+```
+
+```{r}
+red_fitness_noNA_additive <- subset(red_fitness, !is.na(red_fitness$additive_score))
+# https://stackoverflow.com/questions/19699858/ggplot-adding-regression-line-equation-and-r2-with-facet
+lm_eqn = function(df){
+    m = lm(additive_score ~ norm, df);
+    cor_form = cor.test(df$norm, df$additive_score, method = 'pearson')
+    eq <- substitute("r ="~r, #italic(y) == a + b %.% italic(x)*" r2="~r2*" p= "~p*", Pearson's r="~r #Pearson's 
+         list(a = format(coef(m)[[1]], digits = 2), 
+              b = format(coef(m)[[2]], digits = 2), 
+             r2 = format(summary(m)$r.squared, digits = 3),
+             r = format(cor_form$estimate[[1]], digits=2),
+             p = format(cor_form$p.value[[1]], digits=2)))
+    as.character(as.expression(eq));                 
+}
+
+eq <- ddply(red_fitness_noNA_additive,.(condition),lm_eqn)
+
+p <- ggplot(data = red_fitness_noNA_additive, aes(x = norm, y = additive_score, color=category, alpha=category)) +
+            geom_point(aes(size=category), shape=pointshape) +
+            geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x,linetype="dashed", linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("Additive score") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_size_manual(values=combi_sat_size) + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat)
+scat = p + geom_text(data=eq,aes(x = -0.4, y = 1.8,label=V1), size=8, size.unit="pt", parse = TRUE, inherit.aes=FALSE) + facet_wrap(condition~.)
+scat
+ggsave("../lfcSE_weighted_outputImages/pdf/scatter_additive_combi.pdf", scat, width=6.8, height=2, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/scatter_additive_combi.png", scat, width=6.8, height=2, units="in")
+```
+
+```{r}
+red_fitness_noNA_additive <- subset(red_fitness, !is.na(red_fitness$additive_score))
+# https://stackoverflow.com/questions/19699858/ggplot-adding-regression-line-equation-and-r2-with-facet
+lm_eqn = function(df){
+    m = lm(additive_score ~ norm, df);
+    cor_form = cor.test(df$norm, df$additive_score, method = 'spearman')
+    eq <- substitute("rho ="~r, #italic(y) == a + b %.% italic(x)*" r2="~r2*" p= "~p*", Pearson's r="~r #Pearson's 
+         list(a = format(coef(m)[[1]], digits = 2), 
+              b = format(coef(m)[[2]], digits = 2), 
+             r2 = format(summary(m)$r.squared, digits = 3),
+             r = format(cor_form$estimate[[1]], digits=2),
+             p = format(cor_form$p.value[[1]], digits=2)))
+    as.character(as.expression(eq));                 
+}
+
+eq <- ddply(red_fitness_noNA_additive,.(condition),lm_eqn)
+
+p <- ggplot(data = red_fitness_noNA_additive, aes(x = norm, y = additive_score, color=category, alpha=category)) +
+            geom_point(aes(size=category), shape=pointshape) +
+            geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x,linetype="dashed", linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("Additive score") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_size_manual(values=combi_sat_size) + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat)
+scat = p + geom_text(data=eq,aes(x = -0.4, y = 1.8,label=V1), size=8, size.unit="pt", parse = TRUE, inherit.aes=FALSE) + facet_wrap(condition~.)
+scat
+ggsave("../lfcSE_weighted_outputImages/pdf/scatter_additive_combi_Spearman.pdf", scat, width=6.8, height=2, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/scatter_additive_combi_Spearman.png", scat, width=6.8, height=2, units="in")
+```
+
+```{r}
+lm_eqn = function(df){
+    m = lm(DeepSeq_predict ~ norm, df);
+    cor_form = cor.test(df$norm, df$DeepSeq_predict, method = 'pearson')
+    eq <- substitute("r ="~r*~cat2, #italic(y) == a + b %.% italic(x)*" r2="~r2*" p= "~p*", Pearson's r="~r #Pearson's 
+         list(a = format(coef(m)[[1]], digits = 2), 
+              b = format(coef(m)[[2]], digits = 2), 
+             r2 = format(summary(m)$r.squared, digits = 3),
+             r = format(cor_form$estimate[[1]], digits=2),
+             p = format(cor_form$p.value[[1]], digits=2),
+             cat2 = unique(df$category2)))
+    as.character(as.expression(eq));                 
+}
+red_fitness_noNA_DeepSeq$category2 <- red_fitness_noNA_DeepSeq$category
+red_fitness_noNA_DeepSeq[red_fitness_noNA_DeepSeq$sgRNA_target=="WT",]$category2 <- "saturational"
+eq <- ddply(red_fitness_noNA_DeepSeq,.(condition, category2),lm_eqn)
+
+red_fitness_noNA_DeepSeq_onlyComb_no4337 <- subset(red_fitness_noNA_DeepSeq, red_fitness_noNA_DeepSeq$category=="combinatorial" & !grepl("V337", red_fitness_noNA_DeepSeq$sgRNA_target))
+correlation <- cor.test(red_fitness_noNA_DeepSeq_onlyComb_no4337$norm, red_fitness_noNA_DeepSeq_onlyComb_no4337$DeepSeq_predict, method = 'spearman')
+correlation
+correlation <- cor.test(red_fitness_noNA_DeepSeq_onlyComb_no4337$norm, red_fitness_noNA_DeepSeq_onlyComb_no4337$DeepSeq_predict, method = 'pearson')
+correlation
+
+scat <- ggplot(data = red_fitness_noNA_DeepSeq, aes(x = norm, y = DeepSeq_predict, color=category, alpha=category, linetype=category2, shape=category)) +
+            geom_point(aes(size=category)) + scale_size_manual(values=combi_sat_size) + scale_shape_manual(values=combi_sat_shape) + 
+            geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("DeepSequence prediction") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + facet_wrap(condition~.)
+scat = scat + geom_text(data=eq,aes(x = 0.5, y =-15, label=V1), vjust=c(0,1.2,0,1.2,0,1.2), parse = TRUE, inherit.aes=FALSE, size=8, size.unit="pt") + facet_wrap(condition~.)
+scat
+ggsave("../lfcSE_weighted_outputImages/pdf/scatter_DeepSeq_norm.pdf", scat, width=6.8, height=2, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/scatter_DeepSeq_norm.png", scat, width=6.8, height=2, units="in")
+```
+
+```{r}
+red_fitness_noNA_EVcoup <- subset(red_fitness, !is.na(red_fitness$EVcoup_predict))
+
+lm_eqn = function(df){
+    m = lm(EVcoup_predict ~ norm, df);
+    cor_form = cor.test(df$norm, df$EVcoup_predict, method = 'pearson')
+    eq <- substitute("r ="~r*~cat2, #italic(y) == a + b %.% italic(x)*" r2="~r2*" p= "~p*", Pearson's r="~r #Pearson's 
+         list(a = format(coef(m)[[1]], digits = 2), 
+              b = format(coef(m)[[2]], digits = 2), 
+             r2 = format(summary(m)$r.squared, digits = 3),
+             r = format(cor_form$estimate[[1]], digits=2),
+             p = format(cor_form$p.value[[1]], digits=2),
+             cat2 = unique(df$category2)))
+    as.character(as.expression(eq));                 
+}
+red_fitness_noNA_EVcoup$category2 <- red_fitness_noNA_EVcoup$category
+red_fitness_noNA_EVcoup[red_fitness_noNA_EVcoup$sgRNA_target=="WT",]$category2 <- "saturational"
+eq <- ddply(red_fitness_noNA_EVcoup,.(condition, category2),lm_eqn)
+
+red_fitness_noNA_EVcoup_no4337 <- subset(red_fitness_noNA_EVcoup, red_fitness_noNA_EVcoup$category=="combinatorial" & !grepl("V337", red_fitness_noNA_EVcoup$sgRNA_target))
+correlation <- cor.test(red_fitness_noNA_EVcoup_no4337$norm, red_fitness_noNA_EVcoup_no4337$EVcoup_predict, method = 'spearman')
+correlation
+correlation <- cor.test(red_fitness_noNA_EVcoup_no4337$norm, red_fitness_noNA_EVcoup_no4337$EVcoup_predict, method = 'pearson')
+correlation
+
+scat <- ggplot(data = red_fitness_noNA_EVcoup, aes(x = norm, y = EVcoup_predict, color=category, alpha=category, linetype=category2, shape=category)) +
+            geom_point(aes(size=category)) + scale_size_manual(values=combi_sat_size) + scale_shape_manual(values=combi_sat_shape) +
+            geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("EVmutation prediction") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + facet_wrap(condition~.)
+scat = scat + geom_text(data=eq,aes(x = 0.5, y =-10, label=V1), vjust=c(0,1.2,0,1.2,0,1.2), parse = TRUE, inherit.aes=FALSE, size=8, size.unit = "pt") + facet_wrap(condition~.)
+scat
+ggsave("../lfcSE_weighted_outputImages/pdf/scatter_norm_all_EVcoup.pdf", scat, width=6.8, height=2, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/scatter_norm_all_EVcoup.png", scat, width=6.8, height=2, units="in")
+```
+
+```{r}
+lm_eqn = function(df){
+    m = lm(MSA_Transform ~ norm, df);
+    cor_form = cor.test(df$norm, df$MSA_Transform, method = 'pearson')
+    eq <- substitute("r ="~r*~cat2, #italic(y) == a + b %.% italic(x)*" r2="~r2*" p= "~p*", Pearson's r="~r #Pearson's 
+         list(a = format(coef(m)[[1]], digits = 2), 
+              b = format(coef(m)[[2]], digits = 2), 
+             r2 = format(summary(m)$r.squared, digits = 3),
+             r = format(cor_form$estimate[[1]], digits=2),
+             p = format(cor_form$p.value[[1]], digits=2),
+             cat2 = unique(df$category2)))
+    as.character(as.expression(eq));                 
+}
+red_fitness_noNA_DeepSeq$category2 <- red_fitness_noNA_DeepSeq$category
+red_fitness_noNA_DeepSeq[red_fitness_noNA_DeepSeq$sgRNA_target=="WT",]$category2 <- "saturational"
+eq <- ddply(red_fitness_noNA_DeepSeq,.(condition, category2),lm_eqn)
+
+scat <- ggplot(data = red_fitness_noNA_DeepSeq, aes(x = norm, y = MSA_Transform, color=category, alpha=category, linetype=category2, shape=category)) +
+            geom_point(aes(size=category)) + scale_size_manual(values=combi_sat_size) + scale_shape_manual(values=combi_sat_shape) + 
+            geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("MSATransformer (ensemble) prediction") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + facet_wrap(condition~.)
+scat = scat + geom_text(data=eq,aes(x = 0.5, y =-10, label=V1), size=8, size.unit="pt", vjust=c(0,1.2,0,1.2,0,1.2), parse = TRUE, inherit.aes=FALSE) + facet_wrap(condition~.)
+scat
+ggsave("../lfcSE_weighted_outputImages/pdf/scatter_MSA_Transform_norm.pdf", scat, width=6.8, height=2, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/scatter_MSA_Transform_norm.png", scat, width=6.8, height=2, units="in")
+```
+
+```{r}
+df_proteinNPT <- subset(red_fitness, !is.na(red_fitness$proteinNPT_predict))
+
+lm_eqn = function(df){
+    m = lm(proteinNPT_predict ~ norm, df);
+    cor_form = cor.test(df$norm, df$proteinNPT_predict, method = 'pearson')
+    eq <- substitute("r ="~r*~cat2, #italic(y) == a + b %.% italic(x)*" r2="~r2*" p= "~p*", Pearson's r="~r #Pearson's 
+         list(a = format(coef(m)[[1]], digits = 2), 
+              b = format(coef(m)[[2]], digits = 2), 
+             r2 = format(summary(m)$r.squared, digits = 3),
+             r = format(cor_form$estimate[[1]], digits=2),
+             p = format(cor_form$p.value[[1]], digits=2),
+             cat2 = unique(df$category2)))
+    as.character(as.expression(eq));                 
+}
+df_proteinNPT$category2 <- df_proteinNPT$category
+df_proteinNPT[df_proteinNPT$sgRNA_target=="WT",]$category2 <- "saturational"
+eq <- ddply(df_proteinNPT,.(condition, category2),lm_eqn)
+
+scat <- ggplot(data = df_proteinNPT, aes(x = norm, y = proteinNPT_predict, color=category, alpha=category, linetype=category2, shape=category)) +
+            geom_point(aes(size=category)) + scale_size_manual(values=combi_sat_size) + scale_shape_manual(values=combi_sat_shape) + 
+            geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("ProteinNPT prediction") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + facet_wrap(condition~.)
+scat = scat + geom_text(data=eq,aes(x = 0.5, y =-2, label=V1), size=8, size.unit="pt", parse = TRUE, inherit.aes=FALSE) + facet_wrap(condition~.)
+scat
+ggsave("../lfcSE_weighted_outputImages/pdf/scatter_proteinNPT_norm.pdf", scat, width=6.8, height=2, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/scatter_proteinNPT_norm.png", scat, width=6.8, height=2, units="in")
+
+lm_eqn = function(df){
+    m = lm(proteinNPT_predict ~ norm, df);
+    cor_form = cor.test(df$norm, df$proteinNPT_predict, method = 'spearman')
+    eq <- substitute("rho ="~r*~cat2, #italic(y) == a + b %.% italic(x)*" r2="~r2*" p= "~p*", Pearson's r="~r #Pearson's 
+         list(a = format(coef(m)[[1]], digits = 2), 
+              b = format(coef(m)[[2]], digits = 2), 
+             r2 = format(summary(m)$r.squared, digits = 3),
+             r = format(cor_form$estimate[[1]], digits=2),
+             p = format(cor_form$p.value[[1]], digits=2),
+             cat2 = unique(df$category2)))
+    as.character(as.expression(eq));                 
+}
+df_proteinNPT$category2 <- df_proteinNPT$category
+df_proteinNPT[df_proteinNPT$sgRNA_target=="WT",]$category2 <- "saturational"
+eq <- ddply(df_proteinNPT,.(condition, category2),lm_eqn)
+
+scat <- ggplot(data = df_proteinNPT, aes(x = norm, y = proteinNPT_predict, color=category, alpha=category, linetype=category2, shape=category)) +
+            geom_point(aes(size=category)) + scale_size_manual(values=combi_sat_size) + scale_shape_manual(values=combi_sat_shape) + 
+            geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("ProteinNPT prediction") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + facet_wrap(condition~.)
+scat = scat + geom_text(data=eq,aes(x = 0.5, y =-2, label=V1), size=8, size.unit="pt", parse = TRUE, inherit.aes=FALSE) + facet_wrap(condition~.)
+scat
+ggsave("../lfcSE_weighted_outputImages/pdf/scatter_proteinNPT_norm_spearman.pdf", scat, width=6.8, height=2, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/scatter_proteinNPT_norm_spearman.png", scat, width=6.8, height=2, units="in")
+```
+
+
+```{r}
+scat <- ggplot(df_proteinNPT, aes(x=proteinNPT_predict, y=MSA_Transform, color=category, alpha=category, linetype=category, shape=category, size=category)) + geom_point() + scale_shape_manual(values=combi_sat_shape) + scale_size_manual(values=combi_sat_size) + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + theme_light() + xlab("ProteinNPT fitness prediction") + ylab("MSA Transform fitness prediction") + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title = element_blank()) + facet_wrap(condition~.)
+scat
+ggsave("../lfcSE_weighted_outputImages/pdf/scatter_MSA_Transform_proteinNPT.pdf", scat, width=2, height=2, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/scatter_MSA_Transform_proteinNPT.png", scat, width=2, height=2, units="in")
+
+scat <- ggplot(df_proteinNPT, aes(x=proteinNPT_predict, y=additive_score, color=category, alpha=category, linetype=category, shape=category, size=category)) + geom_point() + scale_shape_manual(values=combi_sat_shape) + scale_size_manual(values=combi_sat_size) + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + theme_light() + xlab("ProteinNPT fitness prediction") + ylab("Additive score fitness prediction") + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title = element_blank()) + facet_wrap(condition~.)
+scat
+ggsave("../lfcSE_weighted_outputImages/pdf/scatter_additiveScore_proteinNPT.pdf", scat, width=2, height=2, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/scatter_additiveScore_proteinNPT.png", scat, width=2, height=2, units="in")
+```
+
+## Correlation conservation to fitness
+
+```{r}
+cor_subs <- subset(fitness_data, fitness_data$category=="saturational" | fitness_data$category=="combiANDsatur")
+cor_subs[cor_subs$category=="combiANDsatur",]$category <- "saturational"
+cor_subs <- subset(cor_subs, !is.na(cor_subs$conservationScore))
+
+lm_eqn = function(df){
+    m = lm(conservationScore ~ norm, df);
+    cor_form = cor.test(df$norm, df$conservationScore, method = 'pearson')
+    eq <- substitute("Pearson's r ="~r, #italic(y) == a + b %.% italic(x)*" r2="~r2*" p= "~p*", Pearson's r="~r
+         list(a = format(coef(m)[[1]], digits = 2), 
+              b = format(coef(m)[[2]], digits = 2), 
+             r2 = format(summary(m)$r.squared, digits = 3),
+             r = format(cor_form$estimate[[1]], digits=2),
+             p = format(cor_form$p.value[[1]], digits=2)))
+    as.character(as.expression(eq));                 
+}
+eq <- ddply(cor_subs,.(condition),lm_eqn)
+
+scat <- ggplot(data = cor_subs, aes(x = norm, y = conservationScore, color=category, alpha=category, linetype=category)) +
+            geom_point(aes(size=category, shape=category))  + scale_size_manual(values=combi_sat_size) + scale_shape_manual(values=combi_sat_shape) + 
+            geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("Conservation score") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + facet_wrap(condition~.)
+scat = scat + geom_text(data=eq,aes(x = 1, y =0.9, label=V1), size=8, size.unit="pt", parse = TRUE, inherit.aes=FALSE) + facet_wrap(condition~.)
+scat
+
+ggsave("../lfcSE_weighted_outputImages/pdf/conservation_norm.pdf", scat, width=6.8, height=2, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/conservation_norm.png", scat, width=6.8, height=2, units="in")
+```
+
+## Correlation surface exposure to fitness
+
+```{r}
+surface <- subset(fitness_data, fitness_data$category=="saturational" | fitness_data$category=="combiANDsatur")
+surface[surface$category=="combiANDsatur",]$category <- "saturational"
+surface <- subset(surface, !is.na(surface$relSAS))
+
+lm_eqn = function(df){
+    m = lm(relSAS ~ norm, df);
+    cor_form = cor.test(df$norm, df$relSAS, method = 'pearson')
+    eq <- substitute("Pearson's r ="~r, #italic(y) == a + b %.% italic(x)*" r2="~r2*" p= "~p*", Pearson's r="~r
+         list(a = format(coef(m)[[1]], digits = 2), 
+              b = format(coef(m)[[2]], digits = 2), 
+             r2 = format(summary(m)$r.squared, digits = 3),
+             r = format(cor_form$estimate[[1]], digits=2),
+             p = format(cor_form$p.value[[1]], digits=2)))
+    as.character(as.expression(eq));                 
+}
+eq <- ddply(surface,.(condition),lm_eqn)
+
+scat <- ggplot(data = surface, aes(x = norm, y = relSAS, color=dimer)) +
+            geom_point(size=dotsize, shape=pointshape, alpha=alphalevel) +
+            geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linetype="dashed", linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("Relative solvent accessibility") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_color_manual(values=c("#93dfffff"), na.value="#777777") + facet_wrap(condition~.)
+scat = scat + geom_text(data=eq,aes(x = 1.0, y =-0.05, label=V1), size=8, size.unit="pt", parse = TRUE, inherit.aes=FALSE) + facet_wrap(condition~.)
+scat
+ggsave("../lfcSE_weighted_outputImages/pdf/relSAS_norm.pdf", scat, width=7, height=2, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/relSAS_norm.png", scat, width=30, height=18, units="cm")
+
+
+surface_noDimer <- subset(surface, is.na(surface$dimer))
+eq <- ddply(surface_noDimer,.(condition),lm_eqn)
+
+scat <- ggplot(data = surface_noDimer, aes(x = norm, y = relSAS, color=dimer)) +
+            geom_point(size=dotsize, shape=pointshape, alpha=alphalevel) +
+            geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linetype="dashed", linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("Relative solvent accessibility") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_color_manual(values=c("#93dfffff"), na.value="#777777") + facet_wrap(condition~.)
+scat = scat + geom_text(data=eq,aes(x = 1.0, y =-0.05, label=V1), size=8, size.unit = "pt", parse = TRUE, inherit.aes=FALSE) + facet_wrap(condition~.)
+scat
+ggsave("../lfcSE_weighted_outputImages/pdf/relSAS_norm_noDimer.pdf", scat, width=6.8, height=2, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/relSAS_norm_noDimer.png", scat, width=6.8, height=2, units="in")
+
+
+surface_Dimer <- subset(surface, !is.na(surface$dimer))
+eq <- ddply(surface_Dimer,.(condition),lm_eqn)
+
+scat <- ggplot(data = surface_Dimer, aes(x = norm, y = relSAS, color=dimer)) +
+            geom_point(size=dotsize, shape=pointshape, alpha=alphalevel) +
+            geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linetype="dashed", linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("Relative solvent accessibility") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_color_manual(values=c("#93dfffff"), na.value="#777777") + facet_wrap(condition~.)
+scat = scat + geom_text(data=eq,aes(x = 1.0, y =-0.05, label=V1), size=8, size.unit="pt", parse = TRUE, inherit.aes=FALSE) + facet_wrap(condition~.)
+scat
+ggsave("../lfcSE_weighted_outputImages/pdf/relSAS_norm_onlyDimer.pdf", scat, width=6.8, height=2, units="in")
+ggsave("../lfcSE_weighted_outputImages/png/relSAS_norm_onlyDimer.png", scat, width=30, height=18, units="cm")
+```
+
+# Comparing different conditions
+
+A comparison between different conditions helps to identify variants which behave different in different conditions, e.g. because of an enhanced specificity or higher compatibility with light-dark cycles.
+
+## Compare N2 and O2 gas feeds
+
+```{r fitness-fitness-plots-N2-O2}
+red_fitness <- unique(fitness_data[,c("sgRNA_target", "norm", "condition", "p_fit_adj_WT", "num_barcodes", "category")])
+wide_fitness <- pivot_wider(red_fitness, values_from =c(norm,p_fit_adj_WT), names_from=condition)
+wide_fitness$sgRNA_target <- factor(wide_fitness$sgRNA_target, levels=c(unique(subset(wide_fitness, wide_fitness$sgRNA_target != "WT"))$sgRNA_target, "WT"))
+wide_fitness$WT_not_WT <- "notWT"
+wide_fitness[wide_fitness$sgRNA_target=="WT",]$WT_not_WT <- "WT"
+
+# set some plotting parameters
+WT_shape <- c("notWT"=16, "WT"=4)
+WT_alpha <- c("notWT"=0.2, "WT"=1.0)
+WT_size <- c("notWT"=0.3, "WT"=0.5)
+CLO2_CLN2_cutoff <- 0.25
+barcode_cutoff <- 2
+adjp_cutoff <- 0.05
+
+# extract subsets from big data frames to test if significant differences
+subset_signif_highO2 <- subset(fitness_data, fitness_data$sgRNA_target %in% subset(wide_fitness, wide_fitness$norm_CL_O2>1.0 & wide_fitness$p_fit_adj_WT_CL_O2<0.05)$sgRNA_target)
+subset_signif_highLD <- subset(fitness_data, fitness_data$sgRNA_target %in% subset(wide_fitness, wide_fitness$norm_LD > wide_fitness$norm_CL_O2 & wide_fitness$norm_LD > 0.9)$sgRNA_target)
+
+# prepare plotting, calculate lm to check distance from it (assuming linear regression gives better 1:1 than line through origin)
+lm_CLO2_CLN2 <- lm(norm_CL_N2 ~ norm_CL_O2, wide_fitness)
+summary(lm_CLO2_CLN2)
+
+correlation <- cor.test(wide_fitness$norm_CL_O2, wide_fitness$norm_CL_N2, method = 'spearman')
+correlation
+correlation <- cor.test(wide_fitness$norm_CL_O2, wide_fitness$norm_CL_N2, method = 'pearson')
+correlation
+
+wide_fitness_CL_OL <- wide_fitness
+wide_fitness_CL_OL$distance_lm <- wide_fitness_CL_OL$norm_CL_N2 - (lm_CLO2_CLN2$coefficients[1] + lm_CLO2_CLN2$coefficients[2] * wide_fitness_CL_OL$norm_CL_O2)
+wide_fitness_CL_OL[order(wide_fitness_CL_OL$distance_lm, decreasing = FALSE),][1:10,]
+
+# coloring according to differential expression
+wide_fitness_CL_OL$diff <- "NO"
+wide_fitness_CL_OL$diff[wide_fitness_CL_OL$distance_lm > 0] <- "CL_N2"
+wide_fitness_CL_OL$diff[wide_fitness_CL_OL$distance_lm < 0] <- "CL_O2"
+#wide_fitness_CL_OL$diff[wide_fitness_CL_OL$distance_lm > CLO2_CLN2_cutoff] <- "CL_N2" # in case we care for cut-off for minimal distance from linear regression
+#wide_fitness_CL_OL$diff[wide_fitness_CL_OL$distance_lm < (-CLO2_CLN2_cutoff)] <- "CL_O2" # in case we care for cut-off for minimal distance from linear regression
+wide_fitness_CL_OL[wide_fitness_CL_OL$sgRNA_target=="WT",]$diff <- "WT"
+dotplot_colors <- c(col_conditions, "NO"="#d3d3d3b2", "orange", "WT"="black")
+
+# prepare labels for plot
+wide_fitness_CL_OL$delabel <- NA
+wide_fitness_CL_OL$delabel[wide_fitness_CL_OL$diff !="NO"] <- as.character(wide_fitness_CL_OL$sgRNA_target[wide_fitness_CL_OL$diff != "NO"])
+
+p <- ggplot(wide_fitness_CL_OL, aes(x=norm_CL_O2, y=norm_CL_N2, color=diff, shape=WT_not_WT)) + geom_point(aes(size=WT_not_WT, alpha=WT_not_WT), show.legend=FALSE) + scale_shape_manual(values=WT_shape) + scale_size_manual(values=WT_size) + scale_alpha_manual(values=WT_alpha) + theme_light() + labs(y="Weighted mean fitness value at continuous light, 5% CO2, 95% N2, 0% O2", x="Weighted mean fitness value at continuous light, 5% CO2, 75% N2, 20% O2") + theme(legend.position = "none", panel.grid.minor = element_blank()) + geom_abline(intercept=lm_CLO2_CLN2$coefficients[1],slope=lm_CLO2_CLN2$coefficients[2],linetype="dashed",color="black", linewidth=line_width_for_plots) + scale_colour_manual(values = dotplot_colors) + theme(panel.grid.minor = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) #+ xlim(-6, +7) +ylim(-6,+7)
+ggsave(filename = "../lfcSE_weighted_outputImages/pdf/wfitness_CLN2_CLO2_withoutSignif_wo-labels.pdf", plot=p, width=4, height=4, units="cm")
+ggsave(filename = "../lfcSE_weighted_outputImages/png/wfitness_CLN2_CLO2_withoutSignif_wo-labels.png", plot=p, width=4, height=4, units="cm")
+p
+```
+
+Use Wilcoxon signed rank exact test to check if barcodes for the same variant behave significiantly different between the two tested conditions.
+
+```{r wilcoxon-N2-O2}
+subset_signif_highO2 <- subset(subset_signif_highO2, subset_signif_highO2$condition %in% c("CL_N2", "CL_O2"))
+
+get_controls <- function(cond_spec, sgRNA_spec){
+  control_table <- subset_signif_highO2[subset_signif_highO2$condition != unique(cond_spec) & subset_signif_highO2$sgRNA_target == unique(sgRNA_spec) & subset_signif_highO2$time == 0,]
+  control_table$fitness
+}
+
+subset_signif_highO2 <- dplyr::left_join(
+  subset_signif_highO2,
+  subset_signif_highO2 %>%
+    dplyr::group_by(sgRNA_target, condition, time) %>%
+    dplyr::summarize(
+      .groups = "keep",
+      # apply Wilcoxon rank sum test against other condition
+      p_fitness_condition = stats::wilcox.test(
+        x = fitness,
+        y = get_controls(condition, sgRNA_target),
+        paired = TRUE,
+        alternative = "two.sided"
+        )$p.value
+      ),
+  by = c("sgRNA_target", "condition", "time")
+  ) 
+
+subset_signif_highO2 <- subset_signif_highO2 %>%
+  group_by(condition, time) %>%
+  mutate(
+    p_fitness_condition_adj = stats::p.adjust(p_fitness_condition, method = "BH")
+    )
+```
+
+Plot part of data set which was tested for significant differences and highlight variants which were found to be significant.
+
+```{r fitness-fitness-plot-Wilcoxon-significant}
+subset_signif_highO2_red <- unique(subset_signif_highO2[,c("sgRNA_target", "norm", "condition", "num_barcodes", "p_fitness_condition_adj")])
+subset_signif_highO2_red <- pivot_wider(subset_signif_highO2_red, values_from =c(norm,p_fitness_condition_adj), names_from=condition)
+
+# alpha, size and labels according to significance
+wide_fitness_CL_OL$signif <- "NO"
+wide_fitness_CL_OL$signif[wide_fitness_CL_OL$sgRNA_target %in% unique(subset(subset_signif_highO2, subset_signif_highO2$p_fitness_condition_adj < adjp_cutoff))$sgRNA_target] <- "SIG"
+wide_fitness_CL_OL$delabel <- NA
+wide_fitness_CL_OL$delabel[wide_fitness_CL_OL$signif =="SIG"] <- as.character(wide_fitness_CL_OL$sgRNA_target[wide_fitness_CL_OL$signif =="SIG"])
+wide_fitness_CL_OL[wide_fitness_CL_OL$sgRNA_target=="WT",]$signif <- "WT" # to ensure WT is visible
+signif_size <- c("NO"=0.3, "SIG"=0.5, "WT"=0.5)
+signif_alpha <- c("NO"=0.2, "SIG"=0.9, "WT"=1.0)
+
+p <- ggplot(wide_fitness_CL_OL, aes(x=norm_CL_O2, y=norm_CL_N2, color=diff, label=delabel, shape=WT_not_WT)) + scale_shape_manual(values=WT_shape) + geom_point(aes(size=signif, alpha=signif), show.legend=FALSE) + scale_size_manual(values=signif_size) + scale_alpha_manual(values=signif_alpha) + theme_light() + labs(y="Weighted mean fitness value at continuous light, 5% CO2, 95% N2, 0% O2", x="Weighted mean fitness value at continuous light, 5% CO2, 75% N2, 20% O2") + theme(legend.position = "none", panel.grid.minor = element_blank()) + geom_abline(intercept=lm_CLO2_CLN2$coefficients[1],slope=lm_CLO2_CLN2$coefficients[2],linetype="dashed",color="black", linewidth=line_width_for_plots) + scale_colour_manual(values = dotplot_colors) + geom_text_repel(fontface="italic") + xlim(0.75, 2.5) +ylim(0.75,1.75)
+p
+ggsave(filename = "../lfcSE_weighted_outputImages/pdf/wfitness_CLN2_CLO2_Wilcox_signif.pdf", plot=p, width=12.5, height=12.5, units="cm")
+ggsave(filename = "../lfcSE_weighted_outputImages/png/wfitness_CLN2_CLO2_Wilcox_signif.png", plot=p, width=12.5, height=12.5, units="cm")
+
+wide_fitness_CL_OL[wide_fitness_CL_OL$signif=="SIG",][order(wide_fitness_CL_OL[wide_fitness_CL_OL$signif=="SIG",]$norm_CL_O2, decreasing=TRUE),]
+```
+
+
+```{r message=FALSE, warnings=FALSE}
+possibly_specific_variants <- c("H358I", "K360I", "M328I", "Y333T", "H358Q", "Y322M", "D329T", "Y333V", "K99E", "M231F", "Y333I", "WT", neg_control_K214)
+possibly_specific_variants <- c("H358I", "K360I", "M328I", "Y333T", "Y322M", "D329T", "K99E", "M231F", "WT", neg_control_K214)
+different_colors_set <- c("H358I"="#332288ff", "K360I"="#117733ff", "M328I"="#44aa99ff", "Y333T"="#88cceeff", "Y322M"="#ddcc77ff", "D329T"="#cc6677ff", "K99E"="#aa4499ff", "M231F"="#882255ff", "WT"="black", neg_control_K214="darkgray")
+possibly_specific_subset <- unique(subset(fitness_data, fitness_data$sgRNA_target %in% possibly_specific_variants))
+possibly_specific_subset$sgRNA_target <- factor(possibly_specific_subset$sgRNA_target, levels=c(unique(subset(possibly_specific_subset, !possibly_specific_subset$sgRNA_target %in% c(neg_control_K214, "WT"))$sgRNA_target), neg_control_K214, "WT"))
+p <- lineplot_CVinterval_severalColours_meanlog2(possibly_specific_subset) + labs(title="most different variants N2, O2 feeds") + scale_color_manual(values=different_colors_set) + scale_fill_manual(values=different_colors_set) #+ scale_linetype_manual(values=c("WT"="solid", possibly_specific_variants[9]=44, possibly_specific_variants[1]=88, possibly_specific_variants[2]=13, possibly_specific_variants[3]=1343, possibly_specific_variants[4]=131343, possibly_specific_variants[5]=73, possibly_specific_variants[6]=2262, possibly_specific_variants[7]=112233, possibly_specific_variants[8]=11223344))
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/mostDifferent_CLN2_CLO2_timeLinePlot.pdf", plot=p, width=10, height=10)
+ggsave("../lfcSE_weighted_outputImages/png/mostDifferent_CLN2_CLO2_variants_timeLinePlot.png", plot=p, width=10, height=10)
+a <- pivot_wider(unique(subset(fitness_data, fitness_data$sgRNA_target %in% possibly_specific_variants)[,c("sgRNA_target", "condition", "norm", "p_fit_adj_WT", "num_barcodes")]), values_from=c("norm", "p_fit_adj_WT"), names_from=condition)
+a$norm_multiply <- a$norm_CL_N2 * a$norm_CL_O2 * a$norm_LD
+a[order(a$norm_multiply, decreasing = TRUE),]
+```
+
+## Compare light-dark and continuous light at the same gas feed
+
+```{r fitness-fitness-plots-O2-LD}
+lm_CLO2_LD <- lm(norm_LD ~ norm_CL_O2, wide_fitness)
+summary(lm_CLO2_LD)
+
+correlation <- cor.test(wide_fitness$norm_CL_O2, wide_fitness$norm_LD, method = 'spearman')
+correlation
+correlation <- cor.test(wide_fitness$norm_CL_O2, wide_fitness$norm_LD, method = 'pearson')
+correlation
+
+CL_LD_cutoff <- 0.32
+barcode_cutoff <- 2
+adjp_cutoff <- 0.05
+
+wide_fitness_LD_OL <- wide_fitness
+
+wide_fitness_LD_OL$distance_lm <- wide_fitness_LD_OL$norm_LD - (lm_CLO2_LD$coefficients[1] + lm_CLO2_LD$coefficients[2] * wide_fitness_LD_OL$norm_CL_O2)
+wide_fitness_LD_OL[order(wide_fitness_LD_OL$distance_lm, decreasing = TRUE),][1:10,]
+
+# coloring according to differential expression
+wide_fitness_LD_OL$diff <- "NO"
+wide_fitness_LD_OL$diff[wide_fitness_LD_OL$distance_lm > 0] <- "LD"
+wide_fitness_LD_OL$diff[wide_fitness_LD_OL$distance_lm < 0] <- "CL_O2"
+#wide_fitness_LD_OL$diff[wide_fitness_LD_OL$distance_lm > CL_LD_cutoff] <- "LD" # if using cut-off
+#wide_fitness_LD_OL$diff[wide_fitness_LD_OL$distance_lm < (-CL_LD_cutoff)] <- "CL_O2" # if using cut-off
+wide_fitness_LD_OL[wide_fitness_LD_OL$sgRNA_target=="WT",]$diff <- "WT"
+
+p <- ggplot(wide_fitness_LD_OL, aes(x=norm_CL_O2, y=norm_LD, color=diff, shape=WT_not_WT)) + geom_point(aes(size=WT_not_WT, alpha=WT_not_WT), show.legend=FALSE) + scale_shape_manual(values=WT_shape) + scale_size_manual(values=WT_size) + scale_alpha_manual(values=WT_alpha) + theme_light() + labs(y="Weighted mean fitness value in light-dark cycles, 5% CO2, 75% N2, 20% O2", x="Weighted mean fitness value in continuous light, 5% CO2, 75% N2, 20% O2") + theme(legend.position = "none", panel.grid.minor = element_blank()) + geom_abline(intercept=lm_CLO2_LD$coefficients[1],slope=lm_CLO2_LD$coefficients[2],linetype="dashed",color="black")+ scale_colour_manual(values = dotplot_colors) + theme(panel.grid.minor = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) #+ xlim(-6, +7) +ylim(-6,+7)  + geom_abline(intercept=lm_CLO2_LD$coefficients[1]-CL_LD_cutoff, slope=lm_CLO2_LD$coefficients[2], linetype="dashed", color="black") + geom_abline(intercept=lm_CLO2_LD$coefficients[1]+CL_LD_cutoff, slope=lm_CLO2_LD$coefficients[2], linetype="dashed", color="black") 
+ggsave(filename = "../lfcSE_weighted_outputImages/pdf/wfitness_CLO2_LD_withoutSignif_withoutLabeling.pdf", plot=p, width=4, height=4, units="cm")
+ggsave(filename = "../lfcSE_weighted_outputImages/png/wfitness_CLO2_LD_withoutSignif_withoutLabeling.png", plot=p, width=4, height=4, units="cm")
+p
+```
+
+Run Wilcoxon test to check for significant differences between conditions.
+
+```{r wilcoxon-LD-O2}
+subset_signif_highLD <- subset(subset_signif_highLD, subset_signif_highLD$condition %in% c("LD", "CL_O2") & subset_signif_highLD$time==0.0)
+
+get_controls <- function(cond_spec, sgRNA_spec){
+  control_table <- subset_signif_highLD[subset_signif_highLD$condition != unique(cond_spec) & subset_signif_highLD$sgRNA_target == unique(sgRNA_spec) & subset_signif_highLD$time == 0,]
+  control_table$fitness
+}
+
+subset_signif_highLD <- dplyr::left_join(
+  subset_signif_highLD,
+  subset_signif_highLD %>%
+    dplyr::group_by(sgRNA_target, condition, time) %>%
+    dplyr::summarize(
+      .groups = "keep",
+      # apply Wilcoxon rank sum test against other condition
+      p_fitness_condition = stats::wilcox.test(
+        x = fitness,
+        y = get_controls(condition, sgRNA_target),
+        paired = TRUE,
+        alternative = "two.sided"
+        )$p.value
+      ),
+  by = c("sgRNA_target", "condition", "time")
+  ) 
+
+subset_signif_highLD <- subset_signif_highLD %>%
+  group_by(condition, time) %>%
+  mutate(
+    p_fitness_condition_adj = stats::p.adjust(p_fitness_condition, method = "BH")
+    )
+```
+
+```{r fitness-fitness-plot-Wilcoxon-significant-LD}
+subset_signif_highLD_red <- unique(subset_signif_highLD[,c("sgRNA_target", "norm", "condition", "num_barcodes", "p_fitness_condition_adj")])
+subset_signif_highLD_red <- pivot_wider(subset_signif_highLD_red, values_from =c(norm,p_fitness_condition_adj), names_from=condition)
+
+# labels, alpha and size according to significance
+wide_fitness_LD_OL$signif <- "NO"
+wide_fitness_LD_OL$signif[wide_fitness_LD_OL$sgRNA_target %in% unique(subset(subset_signif_highLD, subset_signif_highLD$p_fitness_condition_adj < 0.4))$sgRNA_target] <- "SIG"
+wide_fitness_LD_OL$delabel <- NA
+wide_fitness_LD_OL$delabel[wide_fitness_LD_OL$signif =="SIG"] <- as.character(wide_fitness_LD_OL$sgRNA_target[wide_fitness_LD_OL$signif =="SIG"])
+wide_fitness_CL_OL[wide_fitness_CL_OL$sgRNA_target=="WT",]$signif <- "WT" # to ensure WT is visible
+
+p <- ggplot(wide_fitness_LD_OL, aes(x=norm_CL_O2, y=norm_LD, color=diff, label=delabel, shape=WT_not_WT)) + scale_shape_manual(values=WT_shape) + geom_point(aes(size=signif, alpha=signif), show.legend=FALSE) + scale_size_manual(values=signif_size) + scale_alpha_manual(values=signif_alpha) + theme_light() + labs(y="Weighted mean fitness value at continuous light, 5% CO2, 95% N2, 0% O2", x="Weighted mean fitness value at continuous light, 5% CO2, 75% N2, 20% O2") + theme(legend.position = "none", panel.grid.minor = element_blank()) + geom_abline(intercept=lm_CLO2_LD$coefficients[1],slope=lm_CLO2_LD$coefficients[2],linetype="dashed",color="black") + scale_colour_manual(values = dotplot_colors) + geom_text_repel() #+ xlim(0.75, 2.5) +ylim(0.75,2.25)
+p
+ggsave(filename = "../lfcSE_weighted_outputImages/pdf/wfitness_LD_CLO2_Wilcox_signif.pdf", plot=p, width=12.5, height=12.5, units="cm")
+ggsave(filename = "../lfcSE_weighted_outputImages/png/wfitness_LD_CLO2_Wilcox_signif.png", plot=p, width=12.5, height=12.5, units="cm")
+
+wide_fitness_CL_OL[wide_fitness_LD_OL$signif=="SIG",][order(wide_fitness_LD_OL[wide_fitness_LD_OL$signif=="SIG",]$norm_LD, decreasing=TRUE),]
+```
+
+```{r message=FALSE, warnings=FALSE}
+## coloring according to differential expression
+wide_fitness_LD_OL$diff <- "NO"
+wide_fitness_LD_OL$diff[wide_fitness_LD_OL$distance_lm > CL_LD_cutoff] <- "LD" # if using cut-off
+wide_fitness_LD_OL$diff[wide_fitness_LD_OL$distance_lm < (-CL_LD_cutoff)] <- "CL_O2" # if using cut-off
+wide_fitness_LD_OL[wide_fitness_LD_OL$sgRNA_target=="WT",]$diff <- "WT"
+
+# labels, alpha and size according to significant difference to WT variant
+wide_fitness_LD_OL$signif <- "NO"
+wide_fitness_LD_OL$signif[wide_fitness_LD_OL$p_fit_adj_WT_CL_O2 < adjp_cutoff & wide_fitness_LD_OL$p_fit_adj_WT_LD < adjp_cutoff & (wide_fitness_LD_OL$diff=="LD" | wide_fitness_LD_OL$diff=="CL_O2") & wide_fitness_LD_OL$num_barcodes >= barcode_cutoff] <- "SIG"
+signif_size <- c("NO"=0.2, "SIG"=0.3)
+signif_alpha <- c("NO"=0.2, "SIG"=0.8)
+wide_fitness_LD_OL$delabel <- as.character(wide_fitness_LD_OL$sgRNA_target)
+wide_fitness_LD_OL$delabel[wide_fitness_LD_OL$signif !="SIG"] <- NA
+
+p <- ggplot(wide_fitness_LD_OL, aes(x=norm_CL_O2, y=norm_LD, color=diff, shape=WT_not_WT, label=delabel)) + geom_point(aes(size=signif, alpha=signif), show.legend=FALSE) + scale_shape_manual(values=WT_shape) + scale_size_manual(values=signif_size) + scale_alpha_manual(values=signif_alpha) + theme_light() + labs(y="Weighted mean fitness value in light-dark cycles, 5% CO2, 75% N2, 20% O2", x="Weighted mean fitness value in continuous light, 5% CO2, 75% N2, 20% O2") + theme(legend.position = "none", panel.grid.minor = element_blank()) + geom_abline(intercept=lm_CLO2_LD$coefficients[1],slope=lm_CLO2_LD$coefficients[2],linetype="dashed",color="black")+ scale_colour_manual(values = dotplot_colors)  + geom_abline(intercept=lm_CLO2_LD$coefficients[1]-CL_LD_cutoff, slope=lm_CLO2_LD$coefficients[2], linetype="dashed", color="black") + geom_abline(intercept=lm_CLO2_LD$coefficients[1]+CL_LD_cutoff, slope=lm_CLO2_LD$coefficients[2], linetype="dashed", color="black") + geom_text_repel() #  + xlim(-6, +7) +ylim(-6,+7)
+ggsave(filename = "../lfcSE_weighted_outputImages/pdf/wfitness_CLO2_LD_attempt_findDifferentVariants.pdf", plot=p, width=12.5, height=12.5, units="cm")
+ggsave(filename = "../lfcSE_weighted_outputImages/png/wfitness_CLO2_LD_attempt_findDifferentVariants.png", plot=p, width=12.5, height=12.5, units="cm")
+p
+
+wide_fitness_LD_OL_sig <- subset(wide_fitness_LD_OL, wide_fitness_LD_OL$signif=="SIG")
+wide_fitness_LD_OL_sig[order(wide_fitness_LD_OL_sig$distance_lm, decreasing = TRUE),][1:10,]
+```
+
+```{r message=FALSE, warnings=FALSE}
+possibly_higher_inLD <- c("K456H", "G432S", "K99N", "H126G","WT", neg_control_K214)
+different_colors_set <- c("K456H"="#332288ff", "G432S"="#117733ff", "H358M"="#44aa99ff", "H126N"="#88cceeff", "H126G"="#ddcc77ff", "K99N"="#cc6677ff", "WT"="black", neg_control_K214="darkgray")
+single_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% possibly_higher_inLD)
+p <- lineplot_CVinterval_severalColours_meanlog2(single_subset) + labs(title="most different variants") + scale_color_manual(values=different_colors_set) + scale_fill_manual(values=different_colors_set)
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/mostDifferent_LD_CLO2_timeLinePlot.pdf", plot=p, width=10, height=10)
+ggsave("../lfcSE_weighted_outputImages/png/mostDifferent_LD_CLO2_variants_timeLinePlot.png", plot=p, width=10, height=10)
+
+unique(subset(fitness_data, fitness_data$sgRNA_target %in% possibly_higher_inLD)[,c("sgRNA_target", "condition", "norm", "p_fit_adj_WT", "num_barcodes")])
+```
+
+# Generally interesting mutants
+
+In the following, an attempt is made to pinpoint some interesting variants that are worth testing. The following chunk of code selects all variants which are performing well under all conditions and are significantly different to the base variant. Furthermore, only variants with at least two barcodes are taken into account.
+
+```{r message=FALSE, warnings=FALSE}
+columns <- c("sgRNA_target",  "condition", "norm", "p_fit_adj_WT", "num_barcodes", "number_muts")
+fitness_data_goodVariants <- pivot_wider(unique(fitness_data[,columns]), values_from = c("norm", "p_fit_adj_WT"), names_from = condition)
+fitness_data_goodVariants <- unique(subset(fitness_data_goodVariants, fitness_data_goodVariants$p_fit_adj_WT_CL_N2 < 0.05 & fitness_data_goodVariants$p_fit_adj_WT_CL_O2 < 0.05 & fitness_data_goodVariants$p_fit_adj_WT_LD < 0.05 & fitness_data_goodVariants$norm_CL_N2 > 1 & fitness_data_goodVariants$norm_CL_O2 > 1 & fitness_data_goodVariants$norm_LD > 1 & fitness_data_goodVariants$num_barcodes > 1))
+
+length(unique(fitness_data_goodVariants$sgRNA_target))
+length(unique(fitness_data_goodVariants$sgRNA_target))/length(unique(fitness_data$sgRNA_target))
+
+fitness_data_goodVariants$combined_norms <- fitness_data_goodVariants$norm_CL_N2 * fitness_data_goodVariants$norm_CL_O2 * fitness_data_goodVariants$norm_LD
+print(fitness_data_goodVariants[order(fitness_data_goodVariants$combined_norms, decreasing = TRUE),])
+write_csv(fitness_data_goodVariants[order(fitness_data_goodVariants$combined_norms, decreasing = TRUE),], "../lfcSE_weighted_outputImages/goodVariants.csv")
+```
+
+```{r message=FALSE, warnings=FALSE}
+highScoring_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("H126N", "H126M", "W128I", "K360I", "K360M", "Q142D", "K233C", "H358C", "K360L", "H358L", "K99N", "K360C", "Y333V", "H126G", "M154E,K261A,Q406D,S446T", "Q142E", "M345Q", "F104V", "V98Q", "K261A,H265A,Q406D,S446I", "K99T", "K233L", "M345V", "WT", neg_control_K214))
+p <- lineplot_CVinterval_severalColours_meanlog2(highScoring_subset) + labs(title="Fittest variants with 95% CI")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/highest_variants_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/highest_variants_timeLinePlot.png", plot=p)
+```
+
+Partially, exchanges at the same amino acid position score quite similarly. We cannot distinguish their fitness on basis of our data.
+
+```{r message=FALSE, warnings=FALSE}
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("H126N", "H126M", "H126G", "WT", neg_control_K214))
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Very fit H126 variants with 95% CI")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/H126_subset_variants_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/H126_subset_variants_timeLinePlot.png", plot=p)
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("K360I", "K360M", "K360L", "K360C", "WT", neg_control_K214))
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Very fit K360 variants with 95% CI")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/K360_subset_variants_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/K360_subset_variants_timeLinePlot.png", plot=p)
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("H358C", "H358L", "WT", neg_control_K214))
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Very fit H358 variants with 95% CI")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/H358_subset_variants_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/H358_subset_variants_timeLinePlot.png", plot=p)
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("Q142D", "Q142E", "WT", neg_control_K214))
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Very fit Q142 variants with 95% CI")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/Q142_subset_variants_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/Q142_subset_variants_timeLinePlot.png", plot=p)
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("M345Q", "M345V", "WT", neg_control_K214))
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Very fit M345 variants with 95% CI")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/M345_subset_variants_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/M345_subset_variants_timeLinePlot.png", plot=p)
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("K233C", "K233L", "WT", neg_control_K214))
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Very fit K233 variants with 95% CI")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/K233_subset_variants_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/K233_subset_variants_timeLinePlot.png", plot=p)
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("K99N", "K99T", "WT", neg_control_K214))
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Very fit K99 variants with 95% CI")
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/K99_subset_variants_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/K99_subset_variants_timeLinePlot.png", plot=p)
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("W128I", "Y333V", "F104V", "V98Q", "WT", neg_control_K214))
+different_colors_set <- c("W128I"="#332288ff", "Y333V"="#117733ff", "V98Q"="#88cceeff", "F104V"="#ddcc77ff", "WT"="black", neg_control_K214="darkgray") #different_colors_set <- c("W128I"="#332288ff", "Y333V"="#117733ff", "F104V"="#44aa99ff", "V98Q"="#88cceeff", "F104V"="#ddcc77ff", "K99N"="#cc6677ff", "WT"="black", neg_control_K214="darkgray")
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Very fit variants with 95% CI") + scale_fill_manual(values=different_colors_set) + scale_color_manual(values=different_colors_set)
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/remaining_highScoring_variants_timeLinePlot.pdf", plot=p)
+ggsave("../lfcSE_weighted_outputImages/png/remaining_highScoring_variants_timeLinePlot.png", plot=p)
+```
+
+# Plot epistatic effects
+
+## General overview over epistasis in data set
+
+From Miton et al., 2016 (https://onlinelibrary.wiley.com/doi/full/10.1002/pro.2876): 
+"We calculated the fold change in enzyme fitness (F) provided by a mutation i on the wild-type background (ΔFwt,i=Fwt+i/Fwt) and the change caused by the same mutation on the intermediate variant j in the trajectory, (ΔFj,i=Fj+i/Fj) [...] epistasis was determined by comparing the fold changes in the trajectory over the wild-type background (ΔFj,i/ΔFwt,i). For the sake of simplicity, we considered that ≥1.5-fold change is significant, and less than 1.5-fold change is neutral (or nearly neutral). [...] Neutral designates mutations that show less than 1.5-fold change in enzyme fitness on both backgrounds (0.7 < [ΔFj,i and ΔFwt,i] < 1.5). (ii - v) Functional refers to non-neutral mutations that exhibit >1.5-fold improvement in either genetic background (ΔFj,i or ΔFwt,i > 1.5). Among functional mutations, ii) no epistasis refers to mutations that do not significantly alter the enzyme fitness depending on the background (mutations are additive, ΔFj,i/ΔFwt,i ∼ 1). (iii – iv) Positive epistasis applies to a mutation that becomes more beneficial when combined with prior substitutions on the trajectory, compared to its effect on the wild-type background (ΔFj,i/ΔFwt,i > 1.5). It can be divided in two subclasses: iii) Positive magnitude epistasis refers to cases where the effect is neutral or positive on the wild-type background and is further amplified on the trajectory (ΔFj,i ≫ ΔFwt, i > 0.7 or ΔFj, i ≫ ΔFwt, i > 1.5); and iv) Positive sign epistasis, which refers to mutations causing a deleterious effect on the wild-type background but a beneficial effect on the trajectory (ΔFwt, i <0.7 and ΔFj, i > 1.5). v) Negative epistasis applies to a mutation that becomes less beneficial on the trajectory background compared to its original effect on the wild type (ΔFj, i/ΔFwt, i <0.7)."
+
+```{r load-epistasis-datasets, message=FALSE, echo=FALSE}
+epistatic_table <- read_tsv("../lfcSE_weighted_outputImages/epistasis/table_values.tsv")
+epistatic_table$ratio_WT_higherOrder <- epistatic_table$Variant_ratio/epistatic_table$Exchange_value_and_ratio_in_WT
+```
+
+Identify cut-off values for good / bad variants - use adj. p values < 0.05 to do so, question "can I significantly distinguish this variant from the base variant?"
+Seems as if differences as small as a normed value of 1.1 are often already significant compared to the base variant - I assume a normed value of 1.25 is about right.
+
+```{r}
+combinatorial_wide <- subset(combinatorial_wide, combinatorial_wide$p_fit_adj_WT<0.05) # in case things were changed above
+a <- unique(subset(combinatorial_wide, combinatorial_wide$norm > 1.0)$norm)
+a <- a[order(a)]
+a[1:20]
+```
+
+Also, differences as small as 0.9 compared to 1.0 can be distinguished - so I guess a good cut-off might be 0.8. 
+
+```{r}
+a <- unique(subset(combinatorial_wide, combinatorial_wide$norm < 1.0)$norm)
+a <- a[order(a, decreasing=TRUE)]
+a[1:20]
+```
+
+```{r}
+summarize_dataframe <- unique(dplyr::summarize(.data=epistatic_table,
+      .by = c(Exchange, Condition),
+    # value in WT background
+    value_background = unique(.data[["Exchange_value_and_ratio_in_WT"]]),
+    # number neg. effect in higher order
+    number_negative_exchanges = sum(.data[["Variant_ratio"]] < 0.8), # adjusted to 0.8 according to observations detailed above from originally 0.7 in paper
+    # number neutral effect in higher order 
+    number_neutral_exchanges = sum(.data[["Variant_ratio"]] > 0.8 & .data[["Variant_ratio"]] < 1.25), # adjusted to 0.8 and 1.2 from 0.7 and 1.5
+    # number pos. effect in higher order
+    number_positive_exchanges = sum(.data[["Variant_ratio"]] > 1.25), # adjusted from 1.5 in paper to 1.2 according to observations detailed above
+    # no epistasis (0.7 < value < 1.5)
+    number_no_epistasis = sum(.data[["ratio_WT_higherOrder"]] > 0.7 & .data[["ratio_WT_higherOrder"]] < 1.5),
+    # positive epistasis (>1.5)
+    number_positive_epistasis = sum(.data[["ratio_WT_higherOrder"]] > 1.5),
+    # negative epistasis (<0.7)
+    number_negative_epistasis = sum(.data[["ratio_WT_higherOrder"]] < 0.7),
+    # total higher exchange
+    number_higher_exchanges = n()
+    ))
+```
+
+```{r}
+exchanges_dataset <- summarize_dataframe[,c("Exchange", "Condition", "number_negative_exchanges", "number_neutral_exchanges", "number_positive_exchanges")]
+exchanges_dataset <- pivot_longer(exchanges_dataset, !c(Exchange, Condition), values_to="number", names_to="exchanges")
+
+exchanges_dataset$Exchange <- factor(exchanges_dataset$Exchange, levels=rev(c("H141L", "H141V", "M154D", "M154E", "M154K", "M154S", "K261A", "K261D", "K261E", "K261F", "H265A", "H265E", "H265K", "H265R", "V337A", "V337S", "Q406D", "Q406E", "S446A", "S446I", "S446T")))
+
+colors_exchanges <- brewer.pal(n = 9, name = "Blues")[c(3,6,9)]
+names(colors_exchanges) <- c("number_positive_exchanges", "number_neutral_exchanges", "number_negative_exchanges")
+
+p <- ggplot(exchanges_dataset) +
+  geom_bar(aes(x = number, y = Exchange, fill = exchanges),
+           position = "fill",
+           stat = "identity")  + 
+  scale_fill_manual(values=colors_exchanges) +
+  facet_grid(~ Condition, switch = "x") + 
+  theme_light() + 
+  theme(strip.placement = "outside",
+        strip.background = element_rect(fill = NA, color = "white"),
+        panel.grid.minor = element_blank(), 
+        axis.text=element_text(size=8), 
+        axis.title=element_text(size=8), 
+        legend.text=element_text(size=8),
+        strip.text.x = element_text(size = 8, colour = "black"))
+p 
+ggsave("../lfcSE_weighted_outputImages/epistasis/Positive_negativeExchanges_higherOrdervariants.pdf", plot=p, width=7.5, height=3)
+ggsave("../lfcSE_weighted_outputImages/epistasis/Positive_negativeExchanges_higherOrdervariants.png", plot=p, width=7.5, height=3)
+```
+
+```{r}
+epistasis_dataset <- summarize_dataframe[,c("Exchange", "Condition", "number_no_epistasis", "number_positive_epistasis", "number_negative_epistasis")]
+epistasis_dataset <- pivot_longer(epistasis_dataset, !c(Exchange, Condition), values_to="number", names_to="epistasis")
+
+epistasis_dataset$Exchange <- factor(epistasis_dataset$Exchange, levels=rev(c("H141L", "H141V", "M154D", "M154E", "M154K", "M154S", "K261A", "K261D", "K261E", "K261F", "H265A", "H265E", "H265K", "H265R", "V337A", "V337S", "Q406D", "Q406E", "S446A", "S446I", "S446T")))
+
+colors_epistasis <- brewer.pal(n = 9, name = "Blues")[c(3,6,9)]
+names(colors_epistasis) <- c("number_positive_epistasis", "number_no_epistasis", "number_negative_epistasis")
+
+p <- ggplot(epistasis_dataset) +
+  geom_bar(aes(x = number, y = Exchange, fill = epistasis),
+           position = "fill",
+           stat = "identity") +
+  scale_fill_manual(values=colors_epistasis) +
+  facet_grid(~ Condition, switch = "x") + 
+  theme_light() + 
+  theme(strip.placement = "outside",
+        strip.background = element_rect(fill = NA, color = "white"),
+        panel.grid.minor = element_blank(), 
+        axis.text=element_text(size=8), 
+        axis.title=element_text(size=8), 
+        legend.text=element_text(size=8),
+        strip.text.x = element_text(size = 8, colour = "black"))
+p
+ggsave("../lfcSE_weighted_outputImages/epistasis/Positive_negativeEpistasis_higherOrdervariants.pdf", plot=p, width=7.5, height=3)
+ggsave("../lfcSE_weighted_outputImages/epistasis/Positive_negativeEpistasis_higherOrdervariants.png", plot=p, width=7.5, height=3)
+```
+
+## Examples of epistasis
+
+```{r}
+epistatic_table_wide <- pivot_wider(epistatic_table[,c("Condition", "Exchange_value_and_ratio_in_WT", "Exchange", "Variant", "Variant_value", "ratio_WT_higherOrder")], names_from=c("Condition"), values_from=c("Variant_value", "ratio_WT_higherOrder", "Exchange_value_and_ratio_in_WT"))
+epistatic_table_wide <- subset(epistatic_table_wide, epistatic_table_wide$ratio_WT_higherOrder_CL_N2>1.5 & epistatic_table_wide$ratio_WT_higherOrder_CL_O2 > 1.5 & epistatic_table_wide$ratio_WT_higherOrder_LD > 1.5 & epistatic_table_wide$Variant_value_CL_N2 > 1.0 & epistatic_table_wide$Variant_value_CL_O2 > 1.0 & epistatic_table_wide$Variant_value_LD > 1.0)
+nrow(epistatic_table_wide)
+epistatic_table_wide$ep_product <- epistatic_table_wide$ratio_WT_higherOrder_CL_N2 * epistatic_table_wide$ratio_WT_higherOrder_CL_O2 * epistatic_table_wide$ratio_WT_higherOrder_LD
+epistatic_table_wide[order(epistatic_table_wide$ep_product, decreasing=TRUE),]
+```
+
+Check again if any of the "good, recovered" strains are just an artefact !
+
+```{r message=FALSE, warnings=FALSE}
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("M154K", "M154K,H265E,Q406E,S446T", "H265E,Q406E,S446T", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+different_colors_set <- c("M154K"="#88cceeff", "M154K,H265E,Q406E,S446T"="#117733ff", "H265E,Q406E,S446T"="#ddcc77ff", "WT"="black", neg_control_K214="darkgray")
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Epistatic effects involving M154K") + scale_fill_manual(values=different_colors_set) + scale_color_manual(values=different_colors_set)
+p
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("K261D", "K261D,H265E,Q406E,S446T", "H265E,Q406E,S446T", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+different_colors_set <- c("K261D"="#88cceeff", "K261D,H265E,Q406E,S446T"="#117733ff", "H265E,Q406E,S446T"="#ddcc77ff", "WT"="black", neg_control_K214="darkgray")
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Epistatic effects involving K261D") + scale_fill_manual(values=different_colors_set) + scale_color_manual(values=different_colors_set)
+p
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("V337A", "H141V,M154A,K261F,H265A,V337A,Q406E,S446I", "H141V,M154A,K261F,H265A,Q406E,S446I", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+different_colors_set <- c("V337A"="#88cceeff", "H141V,M154A,K261F,H265A,V337A,Q406E,S446I"="#117733ff", "H141V,M154A,K261F,H265A,Q406E,S446I"="#ddcc77ff", "WT"="black", neg_control_K214="darkgray")
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Epistatic effects involving V337A") + scale_fill_manual(values=different_colors_set) + scale_color_manual(values=different_colors_set)
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/epistatic-effects-V337A.pdf", plot=p, width=20, height=20)
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("Q406E", "H141V,M154A,K261F,H265A,V337A,Q406E,S446I", "H141V,M154A,K261F,H265A,V337A,S446I", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+different_colors_set <- c("Q406E"="#88cceeff", "H141V,M154A,K261F,H265A,V337A,Q406E,S446I"="#117733ff", "H141V,M154A,K261F,H265A,V337A,S446I"="#ddcc77ff", "WT"="black", neg_control_K214="darkgray")
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Epistatic effects involving Q406E") + scale_fill_manual(values=different_colors_set) + scale_color_manual(values=different_colors_set)
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/epistatic-effects-Q406E.pdf", plot=p, width=20, height=20)
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("Q406E", "H141V,M154A,Q406E", "H141V,M154A", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+different_colors_set <- c("Q406E"="#88cceeff", "H141V,M154A,Q406E"="#117733ff", "H141V,M154A"="#ddcc77ff", "WT"="black", neg_control_K214="darkgray")
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Epistatic effects involving Q406E") + scale_fill_manual(values=different_colors_set) + scale_color_manual(values=different_colors_set)
+p
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("K261A", "K261A,H265K,Q406E,S446A", "H265K,Q406E,S446A", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+different_colors_set <- c("K261A"="#88cceeff", "K261A,H265K,Q406E,S446A"="#117733ff", "H265K,Q406E,S446A"="#ddcc77ff", "WT"="black", neg_control_K214="darkgray")
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Epistatic effects") + scale_fill_manual(values=different_colors_set) + scale_color_manual(values=different_colors_set)
+p
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("H265A", "M154A,K261A,H265A,Q406D", "M154A,K261A,Q406D", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+different_colors_set <- c("H265A"="#88cceeff", "M154A,K261A,H265A,Q406D"="#117733ff", "M154A,K261A,Q406D"="#ddcc77ff", "WT"="black", neg_control_K214="darkgray")
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Epistatic effects involving H265A") + scale_fill_manual(values=different_colors_set) + scale_color_manual(values=different_colors_set)
+p
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("S446T", "M154A,K261A,Q406D,S446T", "M154A,K261A,Q406D", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+different_colors_set <- c("S446T"="#88cceeff", "M154A,K261A,Q406D,S446T"="#117733ff", "M154A,K261A,Q406D"="#ddcc77ff", "WT"="black", neg_control_K214="darkgray")
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Epistatic effects involving S446T") + scale_fill_manual(values=different_colors_set) + scale_color_manual(values=different_colors_set)
+p
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("K261F", "K261F,H265K,Q406D,S446I", "H265K,Q406D,S446I", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+different_colors_set <- c("K261F"="#88cceeff", "K261F,H265K,Q406D,S446I"="#117733ff", "H265K,Q406D,S446I"="#ddcc77ff", "WT"="black", neg_control_K214="darkgray")
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Epistatic effects involving K261F") + scale_fill_manual(values=different_colors_set) + scale_color_manual(values=different_colors_set)
+p
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("H265E", "K261D,H265E,Q406E,S446T", "K261D,Q406E,S446T", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+different_colors_set <- c("H265E"="#88cceeff", "K261D,H265E,Q406E,S446T"="#117733ff", "K261D,Q406E,S446T"="#ddcc77ff", "WT"="black", neg_control_K214="darkgray")
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Epistatic effects involving H265E") + scale_fill_manual(values=different_colors_set) + scale_color_manual(values=different_colors_set)
+p
+
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("K261A", "K261A,H265K,Q406E,S446A", "H265K,Q406E,S446A", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+different_colors_set <- c("K261A"="#88cceeff", "K261A,H265K,Q406E,S446A"="#117733ff", "H265K,Q406E,S446A"="#ddcc77ff", "WT"="black", neg_control_K214="darkgray")
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Epistatic effects involving K261A") + scale_fill_manual(values=different_colors_set) + scale_color_manual(values=different_colors_set)
+p
+```
+
+# Variants for which mutant strains exist
+
+"variant H141V,K261A,H265K,Q406E,S446I with the highest fitness value in the library, but shitty adjusted p value, is H141V,K261A,H265K,Q406E,S446I (norm=2.18, p.adj=0.107), alternative option for showing epistasis (besides D and E), needs control strains H141V, K261A, Q406E, S446I and H265K to show that H265K is detrimental when introduced on its own, beneficial in background of quardruple mutant"
+
+```{r message=FALSE, warnings=FALSE}
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("H141V,K261A,H265K,Q406E,S446I", "H141V,K261A,Q406E,S446I", "H265K", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Epistatic effects and 'strain A'")
+p
+```
+
+H141V, M154A, K261A, H265A, Q406E, S446T	other alternative option for showing epistasis (besides E), there should also be a corresponding mutant with 5 exchanges (H141V, M154A, K261A, Q406E, S446T) and then the comparison that H265A is detrimental on its own, but beneficial in the background of the mutant with 5 exchagnes
+```{r message=FALSE, warnings=FALSE}
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("H141V,M154A,K261A,H265A,Q406E,S446T", "H141V,M154A,K261A,Q406E,S446T", "H265A", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Epistatic effects and 'strain D'")
+p
+```
+
+H141V, K261E, H265A, S446A	"fittest combinatorial mutant variant with a significant difference has four
+amino acid exchanges: H141V,K261E,H265A,S446A (norm=1.56, p.adj=0.0259)
+, main line Figure showing epistasis, there should also be a corresponding triple mutant (H141V, K261E, S446A) showing that H265A on its own is detrimental, in background of H141V, K261E, S446A beneficial"
+
+```{r message=FALSE, warnings=FALSE}
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("H141V,K261E,H265A,S446A", "H141V,K261E,S446A", "H265A", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Epistatic effects and 'strain E'")
+p
+```
+
+Variant underlying the suggested higher-order variants: H141V, K261A, H265A, Q406E, S446T
+
+```{r message=FALSE, warnings=FALSE}
+different_colors_set <- c("W128I"="#88cceeff", "H141V,K261A,H265A,Q406E,S446T"="#117733ff", "K360I"="#ddcc77ff", "WT"="black", neg_control_K214="darkgray")
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("H141V,K261A,H265A,Q406E,S446T", "W128I", "K360I", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Variant underlying B, C, Bfix and single exchanges introduced in these variants") + scale_fill_manual(values=different_colors_set) + scale_color_manual(values=different_colors_set)
+p
+ggsave("../lfcSE_weighted_outputImages/pdf/variant_underlying_B-C-Bfix.pdf", plot=p, width=20, height=20)
+```
+
+W128I	single exchange with high fitness value, H358S	single exchange with high fitness value, K360I	single exchange with high fitness value
+
+<!-- Single amino acid exchange variants with a high normalized fitness score and a low adjusted p value are W128I (norm=1.67, p.adj=0.002), H358S (norm=1.7, p.adj=0.00001) and K360I (norm=1.66, p.adj=0.000000937). -->
+
+```{r message=FALSE, warnings=FALSE}
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("W128I", "H358S", "K360I", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Single exchanges added cloned as single mutant strains")
+p
+```
+
+Higher order variant with V98D, F104C, W128K, Q142D, K233I, V270L, M345I, H358S
+
+```{r message=FALSE, warnings=FALSE}
+plot_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("V98D", "F104C", "W128K", "Q142D", "K233I", "V270L", "M345I", "H358S", "WT", neg_control_K214))
+unique(plot_subset[,c("sgRNA_target", "norm", "condition", "num_barcodes")])
+p <- lineplot_CVinterval_severalColours_meanlog2(plot_subset) + labs(title="Single exchanges underlying higher order variant ('M8')")
+p
+```
+
+# Other analyses for combinatorial library
+
+```{r message=FALSE, warnings=FALSE}
+single_muts_combinatorial <- pivot_wider(unique(subset(fitness_data, fitness_data$category=="combiANDsatur")[,columns]), names_from=condition, values_from=c(norm, p_fit_adj_WT))
+single_muts_combinatorial$norm_multiply <- single_muts_combinatorial$norm_CL_N2 * single_muts_combinatorial$norm_CL_O2 * single_muts_combinatorial$norm_LD
+write.csv(single_muts_combinatorial, file="../lfcSE_weighted_outputImages/single_site_exchanges_combinatorialLibrary.csv")
+single_muts_combinatorial[order(single_muts_combinatorial$norm_multiply, decreasing=TRUE),c(1,4,5,6,10,2,3,7,8,9)]
+```
+
+```{r message=FALSE, warnings=FALSE}
+combi_single_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("WT", "H265K", "H265R", "V337A", "V337S", neg_control_K214))
+p <- lineplot_CVinterval_severalColours_meanlog2(combi_single_subset) + labs(title="Most detrimental single variants in combinatorial library")
+p
+```
+
+```{r message=FALSE, warnings=FALSE}
+for(n_mut in 2:7){
+  print(n_mut)
+  muts_combinatorial <- pivot_wider(unique(subset(fitness_data, fitness_data$number_muts==n_mut)[,columns]), names_from=condition, values_from=c(norm, p_fit_adj_WT))
+  muts_combinatorial$norm_multiply <- muts_combinatorial$norm_CL_N2 * muts_combinatorial$norm_CL_O2 * muts_combinatorial$norm_LD
+  print("Sorted according to product of different normed fitness values")
+  print(head(muts_combinatorial[order(muts_combinatorial$norm_multiply, decreasing=TRUE),c(1,4,5,6,10,2,3,7,8,9)]))
+  muts_combinatorial <- subset(muts_combinatorial, muts_combinatorial$norm_CL_N2 > 1.0 & muts_combinatorial$norm_CL_O2 > 1.0 & muts_combinatorial$norm_LD > 1.0)
+  muts_combinatorial <- subset(muts_combinatorial, (muts_combinatorial$p_fit_adj_WT_CL_N2 < 0.05 | muts_combinatorial$p_fit_adj_WT_CL_O2 < 0.05 | muts_combinatorial$p_fit_adj_WT_LD < 0.05) & muts_combinatorial$norm_CL_N2 > 1.0 & muts_combinatorial$norm_CL_O2 > 1.0 & muts_combinatorial$norm_LD > 1.0) 
+  print("Only selecting for variants with a normed fitness value above 1 in all conditions and a significant difference to the base variant in at least one of the conditions")
+  print(head(muts_combinatorial[order(muts_combinatorial$norm_multiply, decreasing=TRUE),c(1,4,5,6,10,2,3,7,8,9)]))
+}
+
+```
+# Truncated variants
+
+```{r message=FALSE, warnings=FALSE}
+truncated_variants <- subset(fitness_data, fitness_data$category =="notExpected")
+length(unique(truncated_variants$sgRNA_target))
+truncated_wide <- pivot_wider(unique(truncated_variants[,c("sgRNA_target", "norm", "condition", "p_fit_adj_WT", "num_barcodes")]), values_from =c(norm,p_fit_adj_WT), names_from=condition)
+truncated_wide$norm_product <- truncated_wide$norm_CL_N2 * truncated_wide$norm_CL_O2 * truncated_wide$norm_LD
+truncated_wide[order(truncated_wide$norm_product, decreasing=TRUE),]
+truncated_subset <- combi_single_subset <- subset(fitness_data, fitness_data$sgRNA_target %in% c("G395V,STOP395", "F405S,Q406R,N407T,STOP407", "WT", neg_control_K214))
+truncated_subset$sgRNA_target <- factor(truncated_subset$sgRNA_target, levels=c("G395V,STOP395", "F405S,Q406R,N407T,STOP407", "WT", neg_control_K214))
+different_colors_set <- c("G395V,STOP395"="#44aa99ff", "F405S,Q406R,N407T,STOP407"="#aa4499ff", "WT"="black", "K214R"="darkgray")
+different_linetypes_set <- c("G395V,STOP395"=44, "F405S,Q406R,N407T,STOP407"=1343, "WT"="solid", "K214R"="longdash")
+p <- lineplot_CVinterval_severalColours_meanlog2(truncated_subset) + scale_linetype_manual(values=different_linetypes_set) + scale_color_manual(values=different_colors_set) + scale_fill_manual(values=different_colors_set)
+ggsave("../lfcSE_weighted_outputImages/pdf/truncated_variants_performing_well.pdf", plot=p, height=1.75, width=6, units="in")
+p
+```
+
+# Print tables with mutational effect of single amino acid exchanges
+
+```{r}
+single_muts <- unique(subset(fitness_data, fitness_data$number_muts==1 & fitness_data$condition=="CL_N2")[,c("sgRNA_target", "norm", "sd_fitness", "p_fit_adj_WT", "num_barcodes")])
+write_csv(single_muts, "../lfcSE_weighted_outputImages/svg/Fig1/heatMap/single_muts_CLN2.csv")
+
+single_muts <- unique(subset(fitness_data, fitness_data$number_muts==1 & fitness_data$condition=="CL_O2")[,c("sgRNA_target", "norm", "sd_fitness", "p_fit_adj_WT", "num_barcodes")])
+write_csv(single_muts, "../lfcSE_weighted_outputImages/svg/Fig1/heatMap/single_muts_CLO2.csv")
+
+single_muts <- unique(subset(fitness_data, fitness_data$number_muts==1 & fitness_data$condition=="LD")[,c("sgRNA_target", "norm", "sd_fitness", "p_fit_adj_WT", "num_barcodes")])
+write_csv(single_muts, "../lfcSE_weighted_outputImages/svg/Fig1/heatMap/single_muts_LD.csv")
+```
+
+# Create files for ProteinNPT
+
+Compare https://github.com/OATML-Markslab/ProteinNPT. Expects a .csv file. "At a minimum this file requires 2 fields: mutated_sequence (full sequence of amino acids) and DMS_score (assay measurement). If no fold variable is included in the assay file, the pipeline script will automatically create a fold_random_5 variable, assigning each mutant to folds 0-4 at random. You may also use your own cross-validation scheme (eg., assign all training sequences to fold 0, all test sequences to fold 1). To that end, you only need to pass to the pipeline script the name of that fold variable via the fold_variable_name argument and specify the index of the test fold via the test_fold_index argument (if test_fold_index is not passed as argument, the script will automatically perform a full cross-validation, rotating the test fold index at each iteration)."
+
+Create a file for 
+a) predicting higher-order combinations
+- separate amino acid positions into 5 folds --> add folds using python
+- three files for each condition
+
+Use python script single_muts_train_for_combi.py to assign folds for training etc., output saturational_proteinNPT_with_foldChange.csv
+
+Regarding folds: "We develop 3 distinct cross-validation schemes to assess the ability of each model to extrapolate to positions not encountered during training. In the Random scheme, commonly-used in other supervised fitness prediction benchmarks [Rao et al., 2019, Dallago et al., 2022], each mutation is randomly allocated to one of five distinct folds. In the Contiguous scheme, the sequence is split into five contiguous segments along its length, with mutations assigned to each segment based on the position they occur in the sequence. Lastly, the Modulo scheme uses the modulo operator to assign mutated positions to each fold. For example, position 1 is assigned to fold 1, position 2 to fold 2, and so on, looping back to fold 1 at position 6. This pattern continues throughout the sequence. We note that there is no inherent issue with using a Random cross-validation scheme to estimate the performance of predictive models. However, the conclusions drawn and the generalizability claims based on it require careful consideration." --> use modulo scheme for assigning folds to saturational library
+
+b) predicting more combinations
+- how to assign folds? take modulo folds from saturational, combine combinatorial part and saturational part in the end
+
+
+```{r}
+saturational_for_proteinNPT <- unique(subset(fitness_data, fitness_data$number_muts==1)[,c("sgRNA_target", "norm", "baseAA", "condition")])
+saturational_for_proteinNPT <- pivot_wider(saturational_for_proteinNPT, names_from=condition, values_from=norm)
+write_csv(saturational_for_proteinNPT, "../lfcSE_weighted_outputImages/csv_for_proteinNPT/saturational_for_proteinNPT.csv")
+
+all_for_proteinNPT <- unique(subset(fitness_data, fitness_data$number_muts>1)[,c("sgRNA_target", "norm", "condition")])
+all_for_proteinNPT <- pivot_wider(all_for_proteinNPT, names_from=condition, values_from=norm)
+write_tsv(all_for_proteinNPT, "../lfcSE_weighted_outputImages/csv_for_proteinNPT/combinatorial_for_proteinNPT.tsv")
+```
+
+# Create file for Supplement
+
+```{r}
+columns_for_table <- c("sgRNA_target", "num_barcodes", "number_muts", "norm", "condition", "p_fit_adj_WT", "EVcoup_predict", "DeepSeq_predict", "MSA_Transform", "proteinNPT_predict", "additive_score", "conservationScore", "absSAS", "relSAS", "dimer")
+
+write_csv(unique(fitness_data[,columns_for_table]), "../lfcSE_weighted_outputImages/SuppTable_all_fitness_values.csv")
+```
+
+# Session Info {.unnumbered}
+
+```{r sessionInfo, echo=FALSE}
+sessionInfo()
+```
+

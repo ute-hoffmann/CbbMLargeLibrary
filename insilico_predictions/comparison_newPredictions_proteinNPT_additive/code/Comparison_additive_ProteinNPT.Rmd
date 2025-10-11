@@ -1,0 +1,86 @@
+---
+title: "Comparison ProteinNPT and additive model predictions"
+author: 'SYSTEM: `r version[13]`'
+date: 'DATE: `r Sys.time()`'
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  pdf_document:
+    toc: yes
+  html_notebook:
+    theme: cosmo
+    toc: yes
+    number_sections: yes
+params:
+  cpus: 2
+  input_dir: ./
+  meta: ''
+---
+
+```{r load-required-packages, include = FALSE}
+library(ggplot2)
+library(tidyverse)
+library(tidyr)
+library(ggrepel)
+library(dplyr)
+library(ggnewscale)
+```
+
+# Brief description of analysis
+
+A subset of highly scoring variants that were significantly better than the "library base variant" under all conditions was used to create a combinatorial set of variants with up to 16 exchanges (e.g. V98Q:K99N:F104V:H126N:W128I:Q142D:M154E:K233C:K261A:H265A:Y333V:M345Q:H358C:K360I:Q406D:S446T). All these variants were scored using the additive model and the ProteinNPT model which was trained on the experimentally available data set.
+
+```{r load-required-datasets, message=FALSE, echo=FALSE}
+additive_predictions <- read_tsv("../../additiveModel/results/new_variants_additiveScores.csv")
+additive_predictions <- pivot_longer(additive_predictions, cols=c("additive_score_CL_N2", "additive_score_CL_O2", "additive_score_LD"), names_to="condition", values_to = "additive_score")
+additive_predictions[additive_predictions$condition=="additive_score_CL_N2",]$condition <- "CL_N2"
+additive_predictions[additive_predictions$condition=="additive_score_CL_O2",]$condition <- "CL_O2"
+additive_predictions[additive_predictions$condition=="additive_score_LD",]$condition <- "LD"
+
+ProteinNPT_predictions <- read_csv("../input/ProteinNPT_2025-02-09_predict_new_variants_fitness1_fitness2_fitness3_zero_shot_fitness_predictions_train_test_split_embed_MSA_Transformer_head_CNN_aug_auxiliary_froz_True_drop_0.0_val_False_base_pipeline_fold-1.csv")
+names(ProteinNPT_predictions) <- c("mutant", "CL_N2", "label_fit1", "CL_O2", "label_fit2", "LD", "label_fit3", "mut_seq")
+ProteinNPT_predictions <- pivot_longer(ProteinNPT_predictions[,c(1,2,4,6)], cols=c("CL_N2", "CL_O2", "LD"), names_to="condition", values_to="ProteinNPT")
+predictions <- left_join(additive_predictions, ProteinNPT_predictions)
+```
+
+# Create output table
+
+```{r output_table}
+predictions_wide <- pivot_wider(predictions, values_from=c("additive_score", "ProteinNPT"), names_from = "condition")
+predictions_wide$...1 <- NULL
+predictions_wide$product_all <- apply(predictions_wide[,c(2:7)], 1, prod)
+predictions_wide$additive_product <- apply(predictions_wide[,2:4], 1, prod)
+predictions_wide$ProteinNPT_product <- apply(predictions_wide[,5:7], 1, prod)
+write_csv(predictions_wide[order(predictions_wide$product_all, decreasing = TRUE),], "../output/additiveScore_ProteinNPT_predictions.csv")
+```
+
+# Figure to compare both values
+
+```{r message=FALSE}
+predictions$condition <- factor(predictions$condition, levels=c("CL_N2", "CL_O2", "LD"))
+dotsize <- 0.02
+pointshape <- 16
+alphalevel <- 0.4
+line_width_for_plots <- 0.4
+combi_sat_alpha <- c(combinatorial=0.2, saturational=0.2, WT=1.0)
+combi_sat_shape <- c(combinatorial=16, saturational=16, WT=4)
+combi_sat_size <- c(combinatorial=0.4, saturational=0.4, WT=0.8)
+
+correlation <- cor.test(predictions$additive_score, predictions$ProteinNPT, method = 'spearman')
+print(correlation)
+correlation <- cor.test(predictions$additive_score, predictions$ProteinNPT, method = 'pearson')
+print(correlation)
+
+scat <- ggplot(predictions, aes(x=ProteinNPT, y=additive_score)) + geom_point(alpha=alphalevel, color="#69b3a2", shape=pointshape, size=dotsize) + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots, linetype="dashed") + theme_light() + xlab("ProteinNPT fitness prediction") + ylab("Additive score fitness prediction") + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title = element_blank()) + facet_wrap(condition~.)
+scat
+ggsave("../output/scatter_additive_ProteinNPT_predictions.pdf", scat, width=6.8, height=2, units="in")
+ggsave("../output/scatter_additive_ProteinNPT_predictions.png", scat, width=6.8, height=2, units="in")
+```
+
+# Session Info {.unnumbered}
+
+```{r sessionInfo, echo=FALSE}
+sessionInfo()
+```
+

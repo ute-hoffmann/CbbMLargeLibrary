@@ -1,0 +1,160 @@
+---
+title: "Large Rubisco library: Comparison of different ways of weighting fitness estimates"
+author: 'SYSTEM: `r version[13]`'
+date: 'DATE: `r Sys.time()`'
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  pdf_document:
+    toc: yes
+  html_notebook:
+    theme: cosmo
+    toc: yes
+    number_sections: yes
+params:
+  cpus: 2
+  input_dir: ./
+  meta: ''
+---
+
+```{r load-required-packages, include = FALSE}
+library(ggplot2)
+library(tidyverse)
+library(DESeq2)
+library(DescTools)
+library(colorblindr) #https://github.com/clauswilke/colorblindr
+library(tidyr)
+library(ggrepel)
+library(dplyr)
+library(ggnewscale)
+library(Heatplus) # bioconductor
+library(ComplexHeatmap) # bioconductor
+library(edgeR)
+library(Mfuzz)
+library(ggVennDiagram)
+```
+
+In the large CbbM library, a certain number of mutant variants is represented by more than one barcode  (approx. 50% of the variants). Generally, we use the area under the curve (AUC) of the log2FC of barcode counts since time 0 as a proxy for fitness. This means time point 0 is defined as log2FC = 0 and for each barcode, the following log2FC are calculated in respect to time point zero.
+
+For CRISPRi, sgRNAs targeting the same gene were weighted according to their correlation and efficiency. The concept of sgRNA efficiency does only make limited sense in the context of enzyme variants. Hence, several other ways of weighting the results for several barcodes assigned to the same variant were tried out and will be compared in the subsequent analyses.
+
+- Variant 1 (Weighted) was analyzed using the original pipeline, assigning sgRNA correlation and sgRNA efficiency scores to the different barcodes. Note that this analysis was only performed with a high CO2, N2 feed under continuous light, not for all other conditions
+- Variant 2 used the squared standard error of the log2FC of the last time point (lfcSE) as weighting factor. The last variant could be tweaked by taking the lfcSE of prior time points into account - however, these values are highly correlated with the lfcSE of the last time point (Pearson's r = 0.92, Spearman rho=0.94). So, most likely, this would not change the final ranking to a relevant degree.
+- Variant 3 uses lfcSE and Pearson correlation, so is a mixture of variant 1 and 2. Barcodes with low confidence receiver lower weight and barcodes that correlate less with the remaining barcodes.
+- Variant 4 uses only Pearson
+- Variant 5 uses Pearson and lfcSE with same weighting
+
+```{r load-required-datasets, message=FALSE}
+fitness_data_Weighted <- read_tsv("../output_selectedBarcodes/fitness/result.tsv")
+fitness_data_Weighted <- subset(fitness_data_Weighted, fitness_data_Weighted$condition=="highCO2_N2")
+fitness_data_Weighted$condition <- "CL_N2"
+fitness_data_lfcSE <-  read_tsv("../WeightingStrategies_fitnessCalc/result_lfcSE_Weighted.tsv")
+fitness_data_lfcSE_Pearson <- read_tsv("../WeightingStrategies_fitnessCalc/result_lfcSE_Pearson_Weighted.tsv")
+fitness_data_Pearson <- read_tsv("../WeightingStrategies_fitnessCalc/result_Pearson_Weighted.tsv")
+fitness_data_lfcSE_Pearson_sameWeight <- read_tsv("../WeightingStrategies_fitnessCalc/result_lfcSE_Pearson_Weighted_sameWeight.tsv")
+```
+
+# Normalized_fitness
+
+To facilitate the comparison of the different distributions, all fitness values were normalized so that the median K214 fitness value was 0 and WT 1.
+
+When using the CRISPRi weighting or no weighting, K214M is the K214 mutant variant with the highest score. Otherwise, it is K214H.
+
+For all weighting strategies, approx. 9 to 10% of all variants show a higher fitness value than the WT.
+
+```{r}
+fitness_data_Weighted_reduced <- unique(subset(fitness_data_Weighted, fitness_data_Weighted$time==10.1)[,c("sgRNA_target", "wmean_fitness", "condition")])
+WT_fit <- fitness_data_Weighted_reduced[fitness_data_Weighted_reduced$sgRNA_target=="WT",]$wmean_fitness
+K214 <- median(subset(fitness_data_Weighted_reduced, grepl("K214", fitness_data_Weighted_reduced$sgRNA_target))$wmean_fitness)
+fitness_data_Weighted_reduced[which(fitness_data_Weighted_reduced$wmean_fitness==max(subset(fitness_data_Weighted_reduced, grepl("K214", fitness_data_Weighted_reduced$sgRNA_target))$wmean_fitness)),]$sgRNA_target
+fitness_data_Weighted_reduced$norm <- (fitness_data_Weighted_reduced$wmean_fitness - K214)/(WT_fit-K214)
+fitness_data_Weighted_reduced$wmean_fitness <- NULL
+fitness_data_Weighted_reduced$weighting <- "CRISPRi"
+
+fitness_lfcSE_reduced <- unique(fitness_data_lfcSE[,c("sgRNA_target", "norm", "condition")])
+fitness_lfcSE_reduced[which(fitness_lfcSE_reduced$norm==0),]$sgRNA_target
+fitness_lfcSE_reduced$weighting <- "lfcSE"
+
+fitness_data_lfcSE_Pearson_reduced <- unique(fitness_data_lfcSE_Pearson[,c("sgRNA_target", "norm", "condition")])
+fitness_data_lfcSE_Pearson_reduced[which(fitness_data_lfcSE_Pearson_reduced$norm==0),]$sgRNA_target
+fitness_data_lfcSE_Pearson_reduced$weighting <- "lfcSE_Pearson"
+
+fitness_data_lfcSE_Pearson_sameWeight_reduced <- unique(fitness_data_lfcSE_Pearson_sameWeight[,c("sgRNA_target", "norm", "condition")])
+fitness_data_lfcSE_Pearson_sameWeight_reduced[which(fitness_data_lfcSE_Pearson_sameWeight_reduced$norm==0),]$sgRNA_target
+fitness_data_lfcSE_Pearson_sameWeight_reduced$weighting <- "lfcSE_Pearson_sameWeight"
+
+fitness_data_Pearson_reduced <- unique(fitness_data_Pearson[,c("sgRNA_target", "norm", "condition")])
+fitness_data_Pearson_reduced[which(fitness_data_Pearson_reduced$norm==0),]$sgRNA_target
+fitness_data_Pearson_reduced$weighting <- "Pearson"
+
+fitness <- bind_rows(fitness_data_Weighted_reduced, fitness_lfcSE_reduced, fitness_data_lfcSE_Pearson_reduced, fitness_data_lfcSE_Pearson_sameWeight_reduced, fitness_data_Pearson_reduced)
+pivot_wider(subset(fitness, grepl("K214", fitness$sgRNA_target)), values_from=norm, names_from = weighting)
+```
+
+```{r}
+p <- ggplot(fitness, aes(x=norm, group=weighting, fill=weighting, color=weighting)) + geom_density(adjust=1.5, alpha=.2) + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank()) + facet_wrap(~condition)
+p
+```
+
+```{r}
+p <- ggplot(fitness, aes(x=norm, group=condition, fill=condition, color=condition)) + geom_density(adjust=1.5, alpha=.4) + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank()) + facet_wrap(~weighting)
+p
+```
+
+# Correlation among different weighting strategies
+
+Output of all weighting methods is highly correlated. Pearson and Spearman correlation indices are above 0.9 for all comparisons. The method using the variance of the independently calculated AUC values scores lower than the other comparisons, but only a tiny bit. Based on this, it probably does not make a huge difference which weighting method is used for the analysis.
+
+```{r}
+df_correlation <- fitness %>%
+    tidyr::pivot_wider(names_from = "weighting", values_from = "norm") %>%
+    dplyr::select(-c(1,2)) %>%
+    cor(use = "complete.obs")
+
+plot_replicate_correlation <- df_correlation %>%
+    dplyr::as_tibble() %>%
+    dplyr::mutate(sample1 = colnames(.)) %>%
+    tidyr::pivot_longer(
+        cols = !sample1,
+        names_to = "sample2", values_to = "cor_coef"
+    ) %>%
+    ggplot(aes(x = sample1, y = sample2, fill = cor_coef)) +
+    geom_tile() +
+    geom_text(color = grey(0.4), aes(label = round(cor_coef, 2))) +
+    theme_light() +
+    labs(title = "", x = "", y = "") +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+print(plot_replicate_correlation)
+```
+
+```{r}
+df_correlation <- fitness %>%
+    tidyr::pivot_wider(names_from = "weighting", values_from = "norm") %>%
+    dplyr::select(-c(1,2)) %>%
+    cor(use = "complete.obs", method="spearman")
+
+plot_replicate_correlation <- df_correlation %>%
+    dplyr::as_tibble() %>%
+    dplyr::mutate(sample1 = colnames(.)) %>%
+    tidyr::pivot_longer(
+        cols = !sample1,
+        names_to = "sample2", values_to = "cor_coef"
+    ) %>%
+    ggplot(aes(x = sample1, y = sample2, fill = cor_coef)) +
+    geom_tile() +
+    geom_text(color = grey(0.4), aes(label = round(cor_coef, 2))) +
+    theme_light() +
+    labs(title = "", x = "", y = "") +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+print(plot_replicate_correlation)
+```
+
+# Session Info {.unnumbered}
+
+```{r sessionInfo, echo=FALSE}
+sessionInfo()
+```
+
