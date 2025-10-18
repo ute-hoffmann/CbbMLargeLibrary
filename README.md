@@ -75,10 +75,6 @@ On a NextSeq2000, a P2 flow cell was used to obtain results for the first cultiv
 
 Cultivation of large library with 5% CO2, 70% N2, 20% O2 in continuous light or light-dark cycles. A P2 flow cell was used on a NextSeq2000 system. BCL Convert v2.4.0 was used for demultiplexing.
 
-## Mass spectrometry analysis
-
-Input data, code used for analysis and plots are collected in [MS_firstCultivation](MS_firstCultivation).
-
 ## nf-core-crispripipeline analysis 
 
 ### Input
