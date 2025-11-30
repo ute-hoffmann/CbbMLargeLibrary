@@ -1,6 +1,6 @@
 ---
 title: "Analysis of pooled growth of large CbbM library"
-author: 'SYSTEM: `r version[13]`'
+author: "Ute Hoffmann"
 date: 'DATE: `r Sys.time()`'
 output:
   html_document:
@@ -230,6 +230,8 @@ Gini(df_plot$mean_count, unbiased=FALSE)
 
 Normalization: WT is set to "1", and the median of K214 substitutions as "0". For all three conditions, the data set shows a bimodal distribution. This is most pronounced for the continuous light, N2 feed condition.
 
+### Complete library
+
 ```{r message=FALSE}
 plot_subset <- unique(fitness_data[,c("sgRNA_target", "norm", "p_fit_adj_WT", "condition")])
 
@@ -258,6 +260,8 @@ for(cond in unique(plot_subset$condition)){
   print(nrow(subset(temp_subs, temp_subs$norm < 0))/nrow(temp_subs))
 }
 ```
+
+### Combinatorial library
 
 When only checking mutant variants present in the combinatorial library with more than a single amino acid exchange, we still observe a clear bimodal distribution very similar to the one of the complete data set.
 
@@ -292,6 +296,7 @@ for(cond in unique(plot_subset$condition)){
 }
 ```
 
+### Saturational library
 
 ```{r message=FALSE}
 plot_subset <- unique(subset(fitness_data, fitness_data$category %in% c("saturational", "combiANDsatur"))[,c("sgRNA_target", "norm", "p_fit_adj_WT", "num_barcodes", "condition")])
@@ -323,6 +328,8 @@ for(cond in unique(plot_subset$condition)){
   print(nrow(subset(temp_subs, temp_subs$norm < 0))/nrow(temp_subs))
 }
 ```
+
+### Comparison combinatorial and saturational library
 
 When comparing fitness values between the combinatorial and saturational part directly, it becomes obvious that the saturational part contains, relatively speaking, more variants with functional Rubisco variants, i.e. the right peak of the bimodal distribution is higher than the left peak contrasting to the case in the combinatorial part of the library.
 
@@ -522,8 +529,6 @@ ggsave("../lfcSE_weighted_outputImages/png/bar_fitness_data_numberMuts_onlyCombi
 
 ## Correlation with different zero-shot predictors and similar
 
-### For complete library 
-
 There are different ways of predicting the effect of higher order mutant variants. For designing the library, no prior knowledge was available. For this reason, zero-shot predictions using EVmutation and DeepSequence were performed. When data for single-site mutants is available, an additive model can be used that is assuming independence of different amino acid exchanges. Predictions of this model were calculated using python.
 
 ```{r}
@@ -539,6 +544,8 @@ red_fitness[red_fitness$category=="combiANDsatur",]$category <- "saturational"
 red_fitness <- subset(red_fitness, red_fitness$category != "notExpected")
 red_fitness[red_fitness$category=="WT",]$EVcoup_predict <- 0
 ```
+
+### Comparison EVmutation, DeepSequence
 
 ```{r}
 red_fitness_noNA_DeepSeq <- subset(red_fitness, !is.na(red_fitness$DeepSeq_predict))
@@ -559,6 +566,8 @@ ggsave("../lfcSE_weighted_outputImages/pdf/scatter_DeepSeq_EVcoup.pdf", scat, wi
 ggsave("../lfcSE_weighted_outputImages/png/scatter_DeepSeq_EVcoup.png", scat, width=2, height=2, units="in")
 ```
 
+### Comparison EVmutation, MSA Transformer
+
 ```{r}
 for(cat in c("combinatorial", "saturational")){
   print(cat)
@@ -575,6 +584,10 @@ scat
 ggsave("../lfcSE_weighted_outputImages/pdf/scatter_MSA_Transform_EVcoup.pdf", scat, width=2, height=2, units="in")
 ggsave("../lfcSE_weighted_outputImages/png/scatter_MSA_Transform_EVcoup.png", scat, width=2, height=2, units="in")
 ```
+
+### Comparison "additive score" and normalized fitness
+
+#### Pearson
 
 ```{r}
 red_fitness_noNA_additive <- subset(red_fitness, !is.na(red_fitness$additive_score))
@@ -602,6 +615,8 @@ ggsave("../lfcSE_weighted_outputImages/pdf/scatter_additive_combi.pdf", scat, wi
 ggsave("../lfcSE_weighted_outputImages/png/scatter_additive_combi.png", scat, width=6.8, height=2, units="in")
 ```
 
+#### Spearman
+
 ```{r}
 red_fitness_noNA_additive <- subset(red_fitness, !is.na(red_fitness$additive_score))
 # https://stackoverflow.com/questions/19699858/ggplot-adding-regression-line-equation-and-r2-with-facet
@@ -627,6 +642,8 @@ scat
 ggsave("../lfcSE_weighted_outputImages/pdf/scatter_additive_combi_Spearman.pdf", scat, width=6.8, height=2, units="in")
 ggsave("../lfcSE_weighted_outputImages/png/scatter_additive_combi_Spearman.png", scat, width=6.8, height=2, units="in")
 ```
+
+### Comparison DeepSequence, normalized fitness
 
 ```{r}
 lm_eqn = function(df){
@@ -671,6 +688,8 @@ scat
 ggsave("../lfcSE_weighted_outputImages/pdf/scatter_DeepSeq_norm_noV323.pdf", scat, width=6.8, height=2, units="in")
 ggsave("../lfcSE_weighted_outputImages/png/scatter_DeepSeq_norm_noV323.png", scat, width=6.8, height=2, units="in")
 ```
+
+### Comparison EVmutation, normalized fitness
 
 ```{r}
 red_fitness_noNA_EVcoup <- subset(red_fitness, !is.na(red_fitness$EVcoup_predict))
@@ -718,6 +737,8 @@ ggsave("../lfcSE_weighted_outputImages/pdf/scatter_norm_all_EVcoup_noV323.pdf", 
 ggsave("../lfcSE_weighted_outputImages/png/scatter_norm_all_EVcoup_noV323.png", scat, width=6.8, height=2, units="in")
 ```
 
+### Comparison MSA transformer, normalized fitness
+
 ```{r}
 lm_eqn = function(df){
     m = lm(MSA_Transform ~ norm, df);
@@ -755,6 +776,8 @@ scat
 ggsave("../lfcSE_weighted_outputImages/pdf/scatter_MSA_Transform_norm_noV323.pdf", scat, width=6.8, height=2, units="in")
 ggsave("../lfcSE_weighted_outputImages/png/scatter_MSA_Transform_norm_noV323.png", scat, width=6.8, height=2, units="in")
 ```
+
+### Comparison ProteinNPT, normalized fitness
 
 ```{r}
 df_proteinNPT <- subset(red_fitness, !is.na(red_fitness$proteinNPT_predict))
@@ -823,6 +846,7 @@ ggsave("../lfcSE_weighted_outputImages/pdf/scatter_proteinNPT_norm_spearman.pdf"
 ggsave("../lfcSE_weighted_outputImages/png/scatter_proteinNPT_norm_spearman.png", scat, width=6.8, height=2, units="in")
 ```
 
+### Comparison MSA transformer, ProteinNPT
 
 ```{r}
 scat <- ggplot(df_proteinNPT, aes(x=proteinNPT_predict, y=MSA_Transform, color=category, alpha=category, linetype=category, shape=category, size=category)) + geom_point() + scale_shape_manual(values=combi_sat_shape) + scale_size_manual(values=combi_sat_size) + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + theme_light() + xlab("ProteinNPT fitness prediction") + ylab("MSA Transform fitness prediction") + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title = element_blank()) + facet_wrap(condition~.)
