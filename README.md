@@ -1,6 +1,6 @@
-# High-throughput combinatorial mutagenesis of a Form II RubisCO enhances both speed and selectivity
+# The fitness landscape of a Form II rubisco in a photosynthetic bacterium guides engineering of oxygen tolerance
 
-Here, code and info for the analyses presented in the manuscript "High-throughput combinatorial mutagenesis of a Form II RubisCO enhances both speed and selectivity" are collected.
+Here, code and info for the analyses presented in the manuscript "The fitness landscape of a Form II rubisco in a photosynthetic bacterium guides engineering of oxygen tolerance" are collected.
 
 ## Library design
 
@@ -94,7 +94,7 @@ Followed by analysis using code based on [fitness summary file of nf-core-crispr
 
 ## Predict fitness scores for all variants
 
-Scripts for predicting fitness scores for combinatorial library members are collected in the folder (insilico_predictions)[insilico_predictions].
+Scripts for predicting fitness scores for combinatorial library members are collected in the folder [insilico_predictions](insilico_predictions).
 
 ### EVcouplings
 
