@@ -2,6 +2,8 @@
 
 Here, code and info for the analyses presented in the manuscript "The fitness landscape of a Form II rubisco in a photosynthetic bacterium guides engineering of oxygen tolerance" are collected.
 
+[RubisCO_LargeLib_plasmid.dna](RubisCO_LargeLib_plasmid.dna) is the plasmid used for integrating expression cassette for all CbbM variants genomically.
+
 ## Library design
 
 Library design was performed as published in [doi.org/10.1021/acssynbio.5c00065](https://doi.org/10.1021/acssynbio.5c00065) using code available in the [EVmut_inSilico repository](https://github.com/ute-hoffmann/EVmut_inSilico).
