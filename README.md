@@ -4,7 +4,46 @@ Here, code and info for the analyses presented in the manuscript "The fitness la
 
 [RubisCO_LargeLib_plasmid.dna](RubisCO_LargeLib_plasmid.dna) is the plasmid used for integrating expression cassette for all CbbM variants genomically.
 
-## Library design
+## Overview data to Figure and Tables
+
+Data to some of the Figures and Tables shown in Hoffmann & Knave et al. are available in this repository. The following table gives an overview:
+
+| Figure  | Description | Code  | Data  |
+| ------------- | ------------- | ------------- |------------- |
+| Fig. 1C  | Correlation between weighted mean fitness under different growth conditions  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File 1 as pdf](lfcSE_weighted_outputImages/pdf/wfitness_CLN2_CLO2_withoutSignif_wo-labels.pdf), [File 2 as pdf](lfcSE_weighted_outputImages/pdf/wfitness_CLO2_LD_withoutSignif_withoutLabeling.pdf)  |
+| Fig. 1D  | Density plots of saturational/combinatorial library at different growth conditions  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/density_compareCombiSatur.pdf)  |
+| Fig. 2A  | Heat map of DMS effect  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd), [python visualization file 1](lfcSE_weighted_outputImages/heatMap/matrix_plot_CLN2.py), [file 2](lfcSE_weighted_outputImages/heatMap/matrix_plot_CLO2.py), [file 3](lfcSE_weighted_outputImages/heatMap/matrix_plot_LD.py)  | [File 1](lfcSE_weighted_outputImages/heatMap/subst_matrix_CLN2.pdf), [file 2](lfcSE_weighted_outputImages/heatMap/subst_matrix_CLO2.pdf), [file 3](lfcSE_weighted_outputImages/heatMap/subst_matrix_LD.pdf)  |
+| Fig. 2B  | Bar plot with fitness per number of exchanges  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/bar_fitness_data_numberMuts_onlyExpected.pdf)  |
+| Fig. 2C  | Percent of Higher-order variants with positive/neutral/negative effect  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd) and [epistasis.py](code/epistasis.py)  | [File as pdf](lfcSE_weighted_outputImages/epistasis/Positive_negativeExchanges_higherOrdervariants.pdf)  |
+| Fig. 2D  | Growth curves extracted from pool for epistatic effect  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | Plot labelled "Epistatic effects and 'strain E'" in [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd) |
+| Fig. 3A  | Scatter plot normalized weighted mean fitness to EVmutation score  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_norm_all_EVcoup.pdf)  |
+| Fig. 3C  | Scatter plot normalized weighted mean fitness to additive score  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_additive_combi.pdf)  |
+| Supp. Fig. 2  | Growth curves highlighting K200R/K214R and base variant   | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/all_sgRNAtargets_timeLinePlot.pdf)  |
+| Supp Fig. 3A  | Scatter plot normalized weighted mean fitness to relative solvent accessibility  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/relSAS_norm.pdf)  |
+| Supp. Fig. 3B  | Scatter plot normalized weighted mean fitness to conservation  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/conservation_norm.pdf)  |
+| Supp. Fig. 4A  | Volcano plot proteomics data generation 4/generation 0  | [.Rmd file for MS data](MS_firstCultivation/plot_MS_data.Rmd)  | [Fig. as pdf](MS_firstCultivation/Figures/Volcano_highCO2_gen0-4_vers2.pdf)  |
+| Supp. Fig. 4B | Volcano plot proteomics data generation 8/generation 0  | [.Rmd file for MS data](MS_firstCultivation/plot_MS_data.Rmd)  | [Fig. as pdf](Volcano_highCO2_gen0-8_vers2.pdf)  |
+| Supp. Fig. 7A  | Correlation EVcouplings to DeepSequence  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_DeepSeq_EVcoup.pdf)   |
+| Supp. Fig. 7B  | Correlation EVcouplings to MSA Transformer  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_MSA_Transform_EVcoup.pdf)  |
+| Supp. Fig. 8A  | Scatter plot normalized weighted mean fitness to EVmutation score  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_norm_all_EVcoup.pdf)  |
+| Supp. Fig. 8B  | Scatter plot normalized weighted mean fitness to DeepSequence  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_DeepSeq_norm.pdf)  |
+| Supp. Fig. 8C  | Scatter plot normalized weighted mean fitness to MSA Transformer  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_MSA_Transform_norm.pdf)  |
+| Supp. Fig. 9A  | Scatter plot normalized weighted mean fitness to EVmutation score without V323  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_norm_all_EVcoup_noV323.pdf)  |
+| Supp. Fig. 9B  | Scatter plot normalized weighted mean fitness to DeepSequence without V323  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_DeepSeq_norm_noV323.pdf)  |
+| Supp. Fig. 9C  | Scatter plot normalized weighted mean fitness to MSA Transformer without V323  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_MSA_Transform_norm_noV323.pdf)  |
+| Supp. Fig. 10A  | Scatter plot normalized weighted mean fitness to additive score  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_additive_combi.pdf)  |
+| Supp. Fig. 10B  | Scatter plot normalized weighted mean fitness to ProteinNPT predictions, with V323  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_proteinNPT_norm.pdf)  |
+| Supp. Fig. 10C  | Scatter plot normalized weighted mean fitness to ProteinNPT predictions, without V323  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_proteinNPT_norm_noV323.pdf)  |
+
+| Table  | Description | Code  | Data  |
+| ------------- | ------------- | ------------- |------------- |
+| Supp. Table 1  | Positions used in the DMS part of the library  | see below (Library design)  |  |
+| Supp. Table 2  | Overview of library composition  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  |   |
+| Supp. Table 3  | Overview of variants with higher fitness value than base variant in different conditions  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  |   |
+| Supp. Table 4  | Proteomics data after 4 and 8 generations  | [.Rmd file for MS data](MS_firstCultivation/plot_MS_data.Rmd)  | [File as csv](MS_firstCultivation/tables/CCM_table_forPaper.csv), data for all proteins in MS comparisons in [same directory](MS_firstCultivation/tables)  |
+| Supp. Table 5  | Variants of CbbMbase with the highest normalized fitness score  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as csv](lfcSE_weighted_outputImages/goodVariants.csv)  |
+
+## Library design, zero-shot predictions and ProteinNPT
 
 Library design was performed as published in [doi.org/10.1021/acssynbio.5c00065](https://doi.org/10.1021/acssynbio.5c00065) using code available in the [EVmut_inSilico repository](https://github.com/ute-hoffmann/EVmut_inSilico).
 
@@ -44,7 +83,39 @@ To run predictions, different bash wrapper scripts were used. For prediction of 
 
 Files needed as input for the different scripts are collected in [library_design/input](library_design/input).
 
-## PacBio sequencing bioinformatic analysis
+### Predict fitness scores for all variants
+
+Scripts for predicting fitness scores for combinatorial library members are collected in the folder [insilico_predictions](insilico_predictions).
+
+#### EVcouplings
+
+in EVcouplings_predict, use evmut_insilico.yml to create conda environment
+
+```
+conda activate evmut_insilico
+python scripts/predict_allMembers_largeLibrary.py
+```
+
+#### DeepSequence
+
+DeepSequence was run on a Google Cloud Product n1-highmem-2 virtual machine with a NVIDIA T4 GPU. The VAE was trained as described above. To run predictions, use [bash wrapper script](library_design/code_DeepSeq/4_Gallionella-I_calc-delta-E-specific-variants.sh) for python code [DeepSequence_predict_allMembers_largeLibrary_GallionellaI.py](library_design/code_DeepSeq/DeepSequence_predict_allMembers_largeLibrary_GallionellaI.py):
+
+```
+conda activate deep_sequence
+bash 4_Gallionella-I_calc-delta-E-specific-variants.sh
+```
+
+#### MSA Transfomer and ProteinNPT
+
+For both predictions, code from the [ProteinNPT repository](https://github.com/OATML-Markslab/ProteinNPT) was used, specifically the [commit from Dec 23rd, 2024](https://github.com/OATML-Markslab/ProteinNPT/commit/abe963b6afa15e76e8e6b37f01049047a27447c7). For MSA Transformer, the ProteinNPT pipeline runs an ensemble of five MSATransformer instances with different initation seeds.
+
+### ProteinNPT predictions
+
+The [commit from Dec 23rd, 2024](https://github.com/OATML-Markslab/ProteinNPT/commit/abe963b6afa15e76e8e6b37f01049047a27447c7) was used for all work with ProteinNPT. Used an adaptation of [pipeline.sh](https://github.com/OATML-Markslab/ProteinNPT/blob/master/scripts/pipeline.sh), specifically [pipeline_predictNewVariants.sh](ProteinNPT/pipeline_predictNewVariants.sh). A file was created including all experimental data from the two sequencing runs and a set of variants that seemed interesting based on high fitness values in experimental screen. Code for creating this file is collected in [ProteinNPT/2025-02-04_create_testSet](ProteinNPT/2025-02-04_create_testSet). Output (e.g. [stderr](ProteinNPT/2025-02-10_predictions_new_variants/2025-02-08_pipelineNewVariants_stderr.txt) and [stout](ProteinNPT/2025-02-10_predictions_new_variants/2025-02-08_pipelineNewVariants_stdout.txt)) of the pipeline is collected in [ProteinNPT/2025-02-10_predictions_new_variants](ProteinNPT/2025-02-10_predictions_new_variants).
+
+[list_variants.txt](ProteinNPT/2025-02-04_create_testSet/list_variants.txt) includes single amino acid exchanges and combinatorial variants, which were combined in every possible manner using script [1_create_file_with_variants.py](ProteinNPT/2025-02-04_create_testSet/1_create_file_with_variants.py), yielding [list_combinations.txt](ProteinNPT/2025-02-04_create_testSet/list_combinations.txt). [Script 2_create_mutant_sequences_fromNewVariants.py](ProteinNPT/2025-02-04_create_testSet/2_create_mutant_sequences_fromNewVariants.py) was used to create [full-length sequences of these variants](ProteinNPT/2025-02-04_create_testSet/list_new_sequences.txt), which were combined with the list of experimental data for the measured library using (3_create_file_with_newVariants_compatible_with_trainingFile.py)[ProteinNPT/2025-02-04_create_testSet/3_create_file_with_newVariants_compatible_with_trainingFile.py]. Importantly, duplicated sequences were removed, yielding table [2025-02-09_predict_new_variants.csv](ProteinNPT/2025-02-04_create_testSet/2025-02-09_predict_new_variants.csv), which was used as input for [pipeline_predictNewVariants.sh](ProteinNPT/2025-02-10_predictions_new_variants/pipeline_predictNewVariants.sh).
+
+## Bioinformatic analysis of PacBio data
 
 Files and input/output are collected in [PacBio_code](PacBio_code).
 
@@ -65,21 +136,23 @@ cutadapt -a TCTAGAATCGCCGAAAGTAATTCAACTCCATTAA...TCTAGATGCTTACTAGTTACCGCGGCCAGGC
 
 - [createTable_singleCombinatorial.py](PacBio_code/createTable_singleCombinatorial.py): script to create file with overview of mutant variant name and if saturational/combinatorial/...
 
-## Illumina sequencing
+## Illumina NGS bioinformatic analysis and exploratory data analysis
+
+### Illumina sequencing
 
 All files related to sequencing are collected in [Sequencing](Sequencing).
 
-### Sequencing on 24th May 2024
+#### Sequencing on 24th May 2024
 
 On a NextSeq2000, a P2 flow cell was used to obtain results for the first cultivation of the large Rubisco library. For demultiplexing, BCL Convert v2.4.0 was used. Downloaded using the command "bs download project --name large_Rubisco_firstCultiv" (compare [Basespace CLI documentation](https://developer.basespace.illumina.com/docs/content/documentation/cli/cli-overview)). File [sort_files.sh](input/sort_files.sh) was used to combine all fastq files into one folder.
 
-### Sequencencing on 08th November 2024
+#### Sequencencing on 08th November 2024
 
 Cultivation of large library with 5% CO2, 70% N2, 20% O2 in continuous light or light-dark cycles. A P2 flow cell was used on a NextSeq2000 system. BCL Convert v2.4.0 was used for demultiplexing.
 
-## nf-core-crispripipeline analysis 
+### nf-core-crispripipeline analysis 
 
-### Input
+#### Input
 
 Pipeline commit used for analysis: [d9e9b1812b2e093a49f290cd0b04fc407ff1d5a2](https://github.com/MPUSP/nf-core-crispriscreen/commit/d9e9b1812b2e093a49f290cd0b04fc407ff1d5a2) from 31st Oct 2024. Nextflow version 24.04.4, build 5917 (compare Nextflow report in Results folder)
 
@@ -88,45 +161,13 @@ conda activate env_nf
 nextflow run ../../pipelines/nf-core-crispriscreen/ -c custom.config -profile singularity --input "input/samplesheet_1stCultiv_2ndCultiv.csv" --fasta "input/selected_barcodes_Nextflow.fa" --outdir "results" --five_prime_adapter GTCTAGAatcgccgaaagtaattcaactccattaa...TCTAGATGCTTACTAGTTACCGCGGCCA --error_rate 0.2 --filter_mapq=1 --run_mageck false --gene_fitness false
 ```
 
-### Weighting
+#### Weighting
 
 CRISPRi correlation and efficiency as performed by the pipeline only makes limited sense, so different weighting strategies were tried. Compare description in [compare_weightingStrategies.Rmd](code/compare_weightingStrategies.Rmd) and [compare_weightingStrategies.html](code/compare_weightingStrategies.html). Code and output are collected in [nonWeighted_fitnessCalc](nonWeighted_fitnessCalc). Final decision on [calculate_fitness_Weighted_lfcSE_Pearson_sameWeight.R](WeightingStrategies_fitnessCalc/calculate_fitness_Weighted_lfcSE_Pearson_sameWeight.R). 
 
 Followed by analysis using code based on [fitness summary file of nf-core-crispriscreen pipeline](https://github.com/MPUSP/nf-core-crispriscreen/blob/master/bin/fitness_summary.Rmd).
 
-## Predict fitness scores for all variants
-
-Scripts for predicting fitness scores for combinatorial library members are collected in the folder [insilico_predictions](insilico_predictions).
-
-### EVcouplings
-
-in EVcouplings_predict, use evmut_insilico.yml to create conda environment
-
-```
-conda activate evmut_insilico
-python scripts/predict_allMembers_largeLibrary.py
-```
-
-### DeepSequence
-
-DeepSequence was run on a Google Cloud Product n1-highmem-2 virtual machine with a NVIDIA T4 GPU. The VAE was trained as described above. To run predictions, use [bash wrapper script](library_design/code_DeepSeq/4_Gallionella-I_calc-delta-E-specific-variants.sh) for python code [DeepSequence_predict_allMembers_largeLibrary_GallionellaI.py](library_design/code_DeepSeq/DeepSequence_predict_allMembers_largeLibrary_GallionellaI.py):
-
-```
-conda activate deep_sequence
-bash 4_Gallionella-I_calc-delta-E-specific-variants.sh
-```
-
-### MSA Transfomer and ProteinNPT
-
-For both predictions, code from the [ProteinNPT repository](https://github.com/OATML-Markslab/ProteinNPT) was used, specifically the [commit from Dec 23rd, 2024](https://github.com/OATML-Markslab/ProteinNPT/commit/abe963b6afa15e76e8e6b37f01049047a27447c7). For MSA Transformer, the ProteinNPT pipeline runs an ensemble of five MSATransformer instances with different initation seeds.
-
-## ProteinNPT predictions
-
-The [commit from Dec 23rd, 2024](https://github.com/OATML-Markslab/ProteinNPT/commit/abe963b6afa15e76e8e6b37f01049047a27447c7) was used for all work with ProteinNPT. Used an adaptation of [pipeline.sh](https://github.com/OATML-Markslab/ProteinNPT/blob/master/scripts/pipeline.sh), specifically [pipeline_predictNewVariants.sh](ProteinNPT/pipeline_predictNewVariants.sh). A file was created including all experimental data from the two sequencing runs and a set of variants that seemed interesting based on high fitness values in experimental screen. Code for creating this file is collected in [ProteinNPT/2025-02-04_create_testSet](ProteinNPT/2025-02-04_create_testSet). Output (e.g. [stderr](ProteinNPT/2025-02-10_predictions_new_variants/2025-02-08_pipelineNewVariants_stderr.txt) and [stout](ProteinNPT/2025-02-10_predictions_new_variants/2025-02-08_pipelineNewVariants_stdout.txt)) of the pipeline is collected in [ProteinNPT/2025-02-10_predictions_new_variants](ProteinNPT/2025-02-10_predictions_new_variants).
-
-[list_variants.txt](ProteinNPT/2025-02-04_create_testSet/list_variants.txt) includes single amino acid exchanges and combinatorial variants, which were combined in every possible manner using script [1_create_file_with_variants.py](ProteinNPT/2025-02-04_create_testSet/1_create_file_with_variants.py), yielding [list_combinations.txt](ProteinNPT/2025-02-04_create_testSet/list_combinations.txt). [Script 2_create_mutant_sequences_fromNewVariants.py](ProteinNPT/2025-02-04_create_testSet/2_create_mutant_sequences_fromNewVariants.py) was used to create [full-length sequences of these variants](ProteinNPT/2025-02-04_create_testSet/list_new_sequences.txt), which were combined with the list of experimental data for the measured library using (3_create_file_with_newVariants_compatible_with_trainingFile.py)[ProteinNPT/2025-02-04_create_testSet/3_create_file_with_newVariants_compatible_with_trainingFile.py]. Importantly, duplicated sequences were removed, yielding table [2025-02-09_predict_new_variants.csv](ProteinNPT/2025-02-04_create_testSet/2025-02-09_predict_new_variants.csv), which was used as input for [pipeline_predictNewVariants.sh](ProteinNPT/2025-02-10_predictions_new_variants/pipeline_predictNewVariants.sh).
-
-## Further analyses
+### Further analyses
 
 [This .Rmd file](code/plots_lfcSE-weighted_woTunnelMutations.Rmd) collects relevant analyses underlying Figures in the manuscript. Epistasis was determined using script [epistasis.py](code/epistasis.py).
 

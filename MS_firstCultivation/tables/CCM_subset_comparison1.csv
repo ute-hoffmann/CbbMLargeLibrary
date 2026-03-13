@@ -1,0 +1,29 @@
+Entry,gene_names_ordered_locus,locus_tag,log2FC_highco2_4,adj.pvalue_highco2_4,Gene name,Product
+P73106,slr1911,slr1911,-0.978865512063329,0.2727601711465971,slr1911,hypothetical protein
+P54205,slr0009,slr0009,-3.808320241904853,2.9746222491056074e-4,rbcL,ribulose bisphosphate carboxylase large subunit
+P54206,slr0012,slr0012,-3.774646014616206,3.5385675397521987e-4,rbcS,ribulose bisphosphate carboxylase small subunit
+P73231,slr2011,slr2011,-0.44377076829924117,0.7206341576344185,slr2011,hypothetical protein
+P73393,sll1734,sll1734,3.1835433403848827,1.89672453423384e-5,cupA,protein involved in low CO2-inducible;  high aff inity CO2 uptake
+P73394,NA,sll1733,3.735362265917251,2.8797638326949484e-5,NA,NA
+P73395,NA,sll1732,1.0007013020557278,0.40957178230325636,NA,NA
+P73862,NA,sll1594,1.0126384402105062,0.001597198083338717,NA,NA
+P73953,slr1512,slr1512,3.493274091020827,1.2791935247058461e-5,sbtA,sodium-dependent bicarbonate transporter
+P72757,sll1032,sll1032,-0.016759612115590128,0.9756202932049728,ccmN,carbon dioxide concentrating mechanism protein CcmN;  putative carboxysome assembly protein
+P72758,sll1031,sll1031,-1.8708226657547473,1.275894299591703e-4,ccmM,carbon dioxide concentrating mechanism protein CcmM;  putative carboxysome structural protein
+P72759,sll1030,sll1030,2.21188630877401,0.01491558407212761,ccmL,carbon dioxide concentrating mechanism protein CcmL;  putative carboxysome assembly protein
+P72760,sll1029,sll1029,1.6754059717161576,9.491045192238557e-4,ccmK1,carbon dioxide concentrating mechanism protein CcmK
+P72761,sll1028,sll1028,1.5293437747141565,0.06620469518242642,ccmK2,carbon dioxide concentrating mechanism protein CcmK
+Q55517,sll0529,sll0529,0.14798947146810004,0.6813775694487839,sll0529,hypothetical protein
+Q59991,slr0042,slr0042,1.3235937746662925,0.10505187621979434,slr0042,probable porin
+P73392,sll1735,sll1735,1.8413706257188576,0.0016450749856119736,sll1735,hypothetical protein
+P73406,slr1838,slr1838,0.5224775995374498,0.5617979557796142,ccmK3,carbon dioxide concentrating mechanism protein CcmK homolog 3;  putative carboxysome assembly protein
+P73407,slr1839,slr1839,-0.055417140825760956,0.8846416324232989,ccmK4,carbon dioxide concentrating mechanism protein CcmK homolog 4;  putative carboxysome assembly protein
+P73954,slr1513,slr1513,3.094322560497136,0.003444584896764668,sbtB,periplasmic protein;  function unknown
+Q54735,slr1347,slr1347,-1.2739582021556681,1.9818596309993032e-4,icfA,beta-type carbonic anhydrase localized in the c arboxysome
+Q55121,slr0436,slr0436,0.44741741644838884,0.25732902078550196,ccmO,carbon dioxide concentrating mechanism protein CcmO
+Q55415,sll0834,sll0834,-0.034872420401988714,0.9508736735530776,bicA,low affinity sulfate transporter
+Q55459,sll0030,sll0030,0.3984767801413755,0.6232203519535399,cmpR,cmp operon transcriptional regulator;  LysR fami ly protein
+Q55460,slr0040,slr0040,-0.716919668783316,0.19736118881392328,cmpA,bicarbonate transport system substrate-binding protein
+Q55461,slr0041,slr0041,0.93833161250632,0.5684914177484447,cmpB,bicarbonate transport system permease protein
+Q55462,slr0043,slr0043,-0.6850997899785575,0.30360697305769935,cmpC,bicarbonate transport system ATP-binding protei n
+Q55463,slr0044,slr0044,0.5439359669428692,0.4920135094363509,cmpD,bicarbonate transport system ATP-binding protei n
