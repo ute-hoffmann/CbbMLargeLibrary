@@ -10,38 +10,38 @@ Data to some of the Figures and Tables shown in Hoffmann & Knave et al. are avai
 
 | Figure  | Description | Code  | Data  |
 | ------------- | ------------- | ------------- |------------- |
-| Fig. 1C  | Correlation between weighted mean fitness under different growth conditions  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File 1 as pdf](lfcSE_weighted_outputImages/pdf/wfitness_CLN2_CLO2_withoutSignif_wo-labels.pdf), [File 2 as pdf](lfcSE_weighted_outputImages/pdf/wfitness_CLO2_LD_withoutSignif_withoutLabeling.pdf)  |
-| Fig. 1D  | Density plots of saturational/combinatorial library at different growth conditions  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/density_compareCombiSatur.pdf)  |
-| Fig. 2A  | Heat map of DMS effect  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd), [python visualization file 1](lfcSE_weighted_outputImages/heatMap/matrix_plot_CLN2.py), [file 2](lfcSE_weighted_outputImages/heatMap/matrix_plot_CLO2.py), [file 3](lfcSE_weighted_outputImages/heatMap/matrix_plot_LD.py)  | [File 1](lfcSE_weighted_outputImages/heatMap/subst_matrix_CLN2.pdf), [file 2](lfcSE_weighted_outputImages/heatMap/subst_matrix_CLO2.pdf), [file 3](lfcSE_weighted_outputImages/heatMap/subst_matrix_LD.pdf)  |
-| Fig. 2B  | Bar plot with fitness per number of exchanges  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/bar_fitness_data_numberMuts_onlyExpected.pdf)  |
-| Fig. 2C  | Percent of Higher-order variants with positive/neutral/negative effect  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd) and [epistasis.py](code/epistasis.py)  | [File as pdf](lfcSE_weighted_outputImages/epistasis/Positive_negativeExchanges_higherOrdervariants.pdf)  |
-| Fig. 2D  | Growth curves extracted from pool for epistatic effect  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | Plot labelled "Epistatic effects and 'strain E'" in [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd) |
-| Fig. 3A  | Scatter plot normalized weighted mean fitness to EVmutation score  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_norm_all_EVcoup.pdf)  |
-| Fig. 3C  | Scatter plot normalized weighted mean fitness to additive score  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_additive_combi.pdf)  |
-| Supp. Fig. 2  | Growth curves highlighting K200R/K214R and base variant   | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/all_sgRNAtargets_timeLinePlot.pdf)  |
-| Supp Fig. 3A  | Scatter plot normalized weighted mean fitness to relative solvent accessibility  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/relSAS_norm.pdf)  |
-| Supp. Fig. 3B  | Scatter plot normalized weighted mean fitness to conservation  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/conservation_norm.pdf)  |
+| Fig. 1C  | Correlation between weighted mean fitness under different growth conditions  | [.Rmd file with analyses](code/EDA.Rmd)  | [File 1 as pdf](EDA_output/pdf/wfitness_CLN2_CLO2_withoutSignif_wo-labels.pdf), [File 2 as pdf](EDA_output/pdf/wfitness_CLO2_LD_withoutSignif_withoutLabeling.pdf)  |
+| Fig. 1D  | Density plots of saturational/combinatorial library at different growth conditions  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/density_compareCombiSatur.pdf)  |
+| Fig. 2A  | Heat map of DMS effect  | [.Rmd file with analyses](code/EDA.Rmd), [python visualization file 1](EDA_output/heatMap/matrix_plot_CLN2.py), [file 2](EDA_output/heatMap/matrix_plot_CLO2.py), [file 3](EDA_output/heatMap/matrix_plot_LD.py)  | [File 1](EDA_output/heatMap/subst_matrix_CLN2.pdf), [file 2](EDA_output/heatMap/subst_matrix_CLO2.pdf), [file 3](EDA_output/heatMap/subst_matrix_LD.pdf)  |
+| Fig. 2B  | Bar plot with fitness per number of exchanges  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/bar_fitness_data_numberMuts_onlyExpected.pdf)  |
+| Fig. 2C  | Percent of Higher-order variants with positive/neutral/negative effect  | [.Rmd file with analyses](code/EDA.Rmd) and [epistasis.py](code/epistasis.py)  | [File as pdf](EDA_output/epistasis/Positive_negativeExchanges_higherOrdervariants.pdf)  |
+| Fig. 2D  | Growth curves extracted from pool for epistatic effect  | [.Rmd file with analyses](code/EDA.Rmd)  | Plot labelled "Epistatic effects and 'strain E'" in [.Rmd file with analyses](code/EDA.Rmd) |
+| Fig. 3A  | Scatter plot normalized weighted mean fitness to EVmutation score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_norm_all_EVcoup.pdf)  |
+| Fig. 3C  | Scatter plot normalized weighted mean fitness to additive score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_additive_combi.pdf)  |
+| Supp. Fig. 2  | Growth curves highlighting K200R/K214R and base variant   | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/all_sgRNAtargets_timeLinePlot.pdf)  |
+| Supp Fig. 3A  | Scatter plot normalized weighted mean fitness to relative solvent accessibility  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/relSAS_norm.pdf)  |
+| Supp. Fig. 3B  | Scatter plot normalized weighted mean fitness to conservation  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/conservation_norm.pdf)  |
 | Supp. Fig. 4A  | Volcano plot proteomics data generation 4/generation 0  | [.Rmd file for MS data](MS_firstCultivation/plot_MS_data.Rmd)  | [Fig. as pdf](MS_firstCultivation/Figures/Volcano_highCO2_gen0-4_vers2.pdf)  |
 | Supp. Fig. 4B | Volcano plot proteomics data generation 8/generation 0  | [.Rmd file for MS data](MS_firstCultivation/plot_MS_data.Rmd)  | [Fig. as pdf](Volcano_highCO2_gen0-8_vers2.pdf)  |
-| Supp. Fig. 7A  | Correlation EVcouplings to DeepSequence  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_DeepSeq_EVcoup.pdf)   |
-| Supp. Fig. 7B  | Correlation EVcouplings to MSA Transformer  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_MSA_Transform_EVcoup.pdf)  |
-| Supp. Fig. 8A  | Scatter plot normalized weighted mean fitness to EVmutation score  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_norm_all_EVcoup.pdf)  |
-| Supp. Fig. 8B  | Scatter plot normalized weighted mean fitness to DeepSequence  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_DeepSeq_norm.pdf)  |
-| Supp. Fig. 8C  | Scatter plot normalized weighted mean fitness to MSA Transformer  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_MSA_Transform_norm.pdf)  |
-| Supp. Fig. 9A  | Scatter plot normalized weighted mean fitness to EVmutation score without V323  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_norm_all_EVcoup_noV323.pdf)  |
-| Supp. Fig. 9B  | Scatter plot normalized weighted mean fitness to DeepSequence without V323  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_DeepSeq_norm_noV323.pdf)  |
-| Supp. Fig. 9C  | Scatter plot normalized weighted mean fitness to MSA Transformer without V323  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_MSA_Transform_norm_noV323.pdf)  |
-| Supp. Fig. 10A  | Scatter plot normalized weighted mean fitness to additive score  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_additive_combi.pdf)  |
-| Supp. Fig. 10B  | Scatter plot normalized weighted mean fitness to ProteinNPT predictions, with V323  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_proteinNPT_norm.pdf)  |
-| Supp. Fig. 10C  | Scatter plot normalized weighted mean fitness to ProteinNPT predictions, without V323  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as pdf](lfcSE_weighted_outputImages/pdf/scatter_proteinNPT_norm_noV323.pdf)  |
+| Supp. Fig. 7A  | Correlation EVcouplings to DeepSequence  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_DeepSeq_EVcoup.pdf)   |
+| Supp. Fig. 7B  | Correlation EVcouplings to MSA Transformer  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MSA_Transform_EVcoup.pdf)  |
+| Supp. Fig. 8A  | Scatter plot normalized weighted mean fitness to EVmutation score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_norm_all_EVcoup.pdf)  |
+| Supp. Fig. 8B  | Scatter plot normalized weighted mean fitness to DeepSequence  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_DeepSeq_norm.pdf)  |
+| Supp. Fig. 8C  | Scatter plot normalized weighted mean fitness to MSA Transformer  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MSA_Transform_norm.pdf)  |
+| Supp. Fig. 9A  | Scatter plot normalized weighted mean fitness to EVmutation score without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_norm_all_EVcoup_noV323.pdf)  |
+| Supp. Fig. 9B  | Scatter plot normalized weighted mean fitness to DeepSequence without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_DeepSeq_norm_noV323.pdf)  |
+| Supp. Fig. 9C  | Scatter plot normalized weighted mean fitness to MSA Transformer without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MSA_Transform_norm_noV323.pdf)  |
+| Supp. Fig. 10A  | Scatter plot normalized weighted mean fitness to additive score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_additive_combi.pdf)  |
+| Supp. Fig. 10B  | Scatter plot normalized weighted mean fitness to ProteinNPT predictions, with V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_proteinNPT_norm.pdf)  |
+| Supp. Fig. 10C  | Scatter plot normalized weighted mean fitness to ProteinNPT predictions, without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_proteinNPT_norm_noV323.pdf)  |
 
 | Table  | Description | Code  | Data  |
 | ------------- | ------------- | ------------- |------------- |
 | Supp. Table 1  | Positions used in the DMS part of the library  | see below (Library design)  |  |
-| Supp. Table 2  | Overview of library composition  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  |   |
-| Supp. Table 3  | Overview of variants with higher fitness value than base variant in different conditions  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  |   |
+| Supp. Table 2  | Overview of library composition  | [.Rmd file with analyses](code/EDA.Rmd)  |   |
+| Supp. Table 3  | Overview of variants with higher fitness value than base variant in different conditions  | [.Rmd file with analyses](code/EDA.Rmd)  |   |
 | Supp. Table 4  | Proteomics data after 4 and 8 generations  | [.Rmd file for MS data](MS_firstCultivation/plot_MS_data.Rmd)  | [File as csv](MS_firstCultivation/tables/CCM_table_forPaper.csv), data for all proteins in MS comparisons in [same directory](MS_firstCultivation/tables)  |
-| Supp. Table 5  | Variants of CbbMbase with the highest normalized fitness score  | [.Rmd file with analyses](code/plots_lfcSE-weighted_woTunnelMutations.Rmd)  | [File as csv](lfcSE_weighted_outputImages/goodVariants.csv)  |
+| Supp. Table 5  | Variants of CbbMbase with the highest normalized fitness score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as csv](EDA_output/goodVariants.csv)  |
 
 ## Library design, zero-shot predictions and ProteinNPT
 
@@ -158,18 +158,20 @@ Pipeline commit used for analysis: [d9e9b1812b2e093a49f290cd0b04fc407ff1d5a2](ht
 
 ```
 conda activate env_nf
-nextflow run ../../pipelines/nf-core-crispriscreen/ -c custom.config -profile singularity --input "input/samplesheet_1stCultiv_2ndCultiv.csv" --fasta "input/selected_barcodes_Nextflow.fa" --outdir "results" --five_prime_adapter GTCTAGAatcgccgaaagtaattcaactccattaa...TCTAGATGCTTACTAGTTACCGCGGCCA --error_rate 0.2 --filter_mapq=1 --run_mageck false --gene_fitness false
+nextflow run ../../pipelines/nf-core-crispriscreen/ -c custom.config -profile singularity --input "input/samplesheet_1stCultiv_2ndCultiv.csv" --fasta "input/selected_barcodes_Nextflow.fa" --outdir "nf-core-crispripipeline_Results" --five_prime_adapter GTCTAGAatcgccgaaagtaattcaactccattaa...TCTAGATGCTTACTAGTTACCGCGGCCA --error_rate 0.2 --filter_mapq=1 --run_mageck false --gene_fitness false
 ```
+
+Results are collected in directory [nf-core-crispripipeline_Results](nf-core-crispripipeline_Results).
 
 #### Weighting
 
-CRISPRi correlation and efficiency as performed by the pipeline only makes limited sense, so different weighting strategies were tried. Compare description in [compare_weightingStrategies.Rmd](code/compare_weightingStrategies.Rmd) and [compare_weightingStrategies.html](code/compare_weightingStrategies.html). Code and output are collected in [nonWeighted_fitnessCalc](nonWeighted_fitnessCalc). Final decision on [calculate_fitness_Weighted_lfcSE_Pearson_sameWeight.R](WeightingStrategies_fitnessCalc/calculate_fitness_Weighted_lfcSE_Pearson_sameWeight.R). 
+CRISPRi correlation and efficiency as performed by the pipeline only makes limited sense, so different weighting strategies were tried. Compare description in [compare_weightingStrategies.Rmd](code/compare_weightingStrategies.Rmd) and [compare_weightingStrategies.html](code/compare_weightingStrategies.html). Code and output are collected in [WeightingStrategies_fitnessCalc](WeightingStrategies_fitnessCalc). Final decision on [calculate_fitness_Weighted_lfcSE_Pearson_sameWeight.R](WeightingStrategies_fitnessCalc/calculate_fitness_Weighted_lfcSE_Pearson_sameWeight.R). 
 
 Followed by analysis using code based on [fitness summary file of nf-core-crispriscreen pipeline](https://github.com/MPUSP/nf-core-crispriscreen/blob/master/bin/fitness_summary.Rmd).
 
 ### Further analyses
 
-[This .Rmd file](code/plots_lfcSE-weighted_woTunnelMutations.Rmd) collects relevant analyses underlying Figures in the manuscript. Epistasis was determined using script [epistasis.py](code/epistasis.py).
+[This .Rmd file](code/EDA.Rmd) collects relevant analyses underlying Figures in the manuscript. Epistasis was determined using script [epistasis.py](code/epistasis.py).
 
 ## Citations & GitHub repositories
 
