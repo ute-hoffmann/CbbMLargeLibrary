@@ -59,11 +59,12 @@ Fitness values are given as normalized values, i.e. a value of 1.0 equals the fi
 In a first step, all data of relevance will be loaded.
 
 ```{r load-required-datasets, message=FALSE, echo=FALSE}
-count_matrix <- read_tsv("../results/prepare/all_counts.tsv")
+count_matrix <- read_tsv("../nf-core-crispripipeline_Results/prepare/all_counts.tsv")
 count_matrix$Gene <- NULL
 fitness_data <-  read_tsv("../WeightingStrategies_fitnessCalc/result_lfcSE_Pearson_Weighted_sameWeight.tsv")
 satu_combi <- read_tsv("../input/combi_satur_mutatios.tsv", col_names = c("sgRNA_target", "category"))
 fitness_data <- left_join(fitness_data, satu_combi)
+rm(satu_combi)
 number_muts <- read_tsv("../input/number_mutations_variants.tsv")
 fitness_data <- left_join(fitness_data, number_muts)
 
@@ -113,6 +114,41 @@ fitness_data <- left_join(fitness_data, MSAtransf)
 proteinNPT <- read_tsv("../input/ProteinNPT_mutant_fitnessPredictions.tsv")
 proteinNPT <- pivot_longer(proteinNPT, cols=c(2,3,4), names_to="condition", values_to="proteinNPT_predict")
 fitness_data <- left_join(fitness_data, proteinNPT)
+
+MoCHI <- read_tsv("../EDA_output/MoCHI/MoCHI_predictions.tsv")
+names(MoCHI) <- c("condition", "sgRNA_target", "MoCHI_mean", "MoCHI_sd")
+fitness_data <- left_join(fitness_data, MoCHI)
+
+rm("number_muts", "tunnel_mutations", "EVcouplings_predict", "DeepSeq_predict_complete", "additive_scores_CL_N2", "additive_scores_CL_O2", "additive_scores_LD", "additive_scores", "conservation_scores", "relSAS_scores", "dimer", "MSAtransf", "proteinNPT", "MoCHI")
+write_tsv(fitness_data, "../all_info_compiled.tsv")
+```
+
+# Plot to check how lfcSE and baseMean relate to each other
+
+```{r, fig.width = 12, fig.height = 10, warning = FALSE, message=FALSE}
+fitness_lfcSE <- unique(fitness_data[,c("lfcSE", "baseMean", "condition", "sgRNA")])
+fitness_lfcSE <- dplyr::left_join(
+  fitness_lfcSE,
+  fitness_lfcSE %>%
+    dplyr::group_by(sgRNA, condition) %>%
+    dplyr::summarize(
+      .groups = "keep", 
+      # get max lfcSE
+      weight_lfcSE = max(lfcSE)
+    )
+)
+fitness_lfcSE <- unique(subset(fitness_lfcSE, !is.na(fitness_lfcSE$baseMean))[,c("condition", "sgRNA", "baseMean","weight_lfcSE")])
+fitness_lfcSE$log_baseMean <- log(fitness_lfcSE$baseMean)
+fitness_lfcSE$inverse_lfcSE <- 1/fitness_lfcSE$weight_lfcSE
+fitness_lfcSE <- subset(fitness_lfcSE, fitness_lfcSE$condition == "CL_N2")
+p <- ggplot(fitness_lfcSE, aes(x=log_baseMean, y=inverse_lfcSE)) + geom_point(size=0.001, color="#4a4a4aff") + theme_light() + ylab("1/lfcSE") + xlab("log(baseMean)") + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=0.4) #+ facet_wrap(~condition)+ theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8))
+p
+ggsave("../EDA_output/pdf/scatter_lfcSE_baseMean.pdf", plot=p, width=4, height=4, units="cm")
+ggsave("../EDA_output/png/scatter_lfcSE_baseMean.png", plot=p, width=4, height=4, units="cm")
+correlation <- cor.test(fitness_lfcSE$log_baseMean, fitness_lfcSE$inverse_lfcSE, method = 'pearson')
+print(correlation)
+mean(fitness_lfcSE$baseMean)
+rm(fitness_lfcSE)
 ```
 
 # Diagnostic plots for cultivation
@@ -191,6 +227,7 @@ ddstime0 <- DESeqDataSetFromMatrix(
   design = ~ 1)
 ddstime0 <- estimateSizeFactors(ddstime0)
 counts_norm_ddstime0 <- as.data.frame(counts(ddstime0, normalized=TRUE))
+rm(ddstime0,count_matrix,count_matrix_time0)
 ```
 
 When log10-transforming the x-scale of the mean of counts in the different samples, the distribution looks as if mean values were almost normally distributed. This is, if I am not mistaken, relatively typical for count data. (Count data does usually follow a Poisson distribution, which looks more "normal" when being log-transformed)
@@ -222,6 +259,218 @@ Gini(counts_norm_ddstime0$O2_2, unbiased=FALSE)
 Gini(counts_norm_ddstime0$N2_1, unbiased=FALSE)
 Gini(counts_norm_ddstime0$N2_2, unbiased=FALSE)
 Gini(df_plot$mean_count, unbiased=FALSE)
+```
+
+## Volcano plots for different conditions, scatter plots number barcodes to adjusted p values, histogram of p values
+
+```{r, echo=FALSE}
+volcanoPlot_ggplot <-  function(dframe, foldchange=1, padjusted=0.01, color=TRUE, text=FALSE, numbers=TRUE, lines_padj_FC=TRUE, colours=c("#e69f00b2","#005a96b2",  "#d3d3d3b2"))
+{
+  # compare: https://biocorecrg.github.io/CRG_RIntroduction/volcano-plots.html
+  
+  # The significantly differentially expressed genes are the ones found in the upper-left and upper-right corners.
+  # Add a column to the data frame to specify if they are UP- or DOWN- regulated (log2FoldChange respectively positive or negative)
+  
+  # add a column of NAs
+  df_copy <- as.data.frame(dframe)
+  df_copy$diffexpressed <- "NO"
+  df_copy$diffexpressed[df_copy$log2FC > 1+foldchange & df_copy$adj.pvalue < padjusted] <- "UP"
+  df_copy$diffexpressed[df_copy$log2FC < 1-foldchange & df_copy$adj.pvalue < padjusted] <- "DOWN"
+  
+  # prepare labels of plot
+  df_copy$delabel <- NA
+  df_copy$delabel[df_copy$diffexpressed != "NO"] <- df_copy$gene_names_ordered_locus[df_copy$diffexpressed != "NO"]
+  
+  # Plot
+  p <- ggplot(data=df_copy, aes(x=log2FC, y=-log10(adj.pvalue), col=diffexpressed, label=delabel)) + geom_point(size=0.01,alpha=0.3, show.legend = FALSE) + 
+    theme_light() + labs(y="-Log10(p.adj compared to CbbM_base)", x="Normalized weighted mean fitness") + theme(legend.position = "none")
+  
+  # color points
+  mycolors <- c(colours)
+  names(mycolors) <- c("DOWN", "UP", "NO")
+  p <- p  + scale_colour_manual(values = mycolors) + theme(panel.grid.minor = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title=element_blank())
+  #scale_colour_gradient2(midpoint=1.0,mid=colours[3],low=colours[1], high=colours[2])#+ scale_colour_manual(values = mycolors)
+ 
+  
+  # Now write down the name of genes beside the points...
+  # Create a new column "delabel" to de, that will contain the name of genes differentially expressed (NA in case they are not)
+  if(text){
+    p <- p + geom_text_repel(fontface="italic")   #geom_text()
+  }
+    
+  if(lines_padj_FC){
+    p <- p + geom_vline(xintercept=c(1-foldchange, 1+foldchange), linetype="dotted") +
+      geom_hline(yintercept=-log10(padjusted), linetype="dotted") # http://www.sthda.com/english/wiki/ggplot2-line-types-how-to-change-line-types-of-a-graph-in-r-software
+  }
+  return(p)
+}
+
+volcanoPlot_gradient_ggplot <-  function(dframe, foldchange=1, padjusted=0.01, color=TRUE, text=FALSE, numbers=TRUE, lines_padj_FC=TRUE, colours=c("#e69f00b2","#005a96b2",  "#d3d3d3b2"))
+{
+  # compare: https://biocorecrg.github.io/CRG_RIntroduction/volcano-plots.html
+  
+  df_copy <- as.data.frame(dframe)
+  # Plot
+  p <- ggplot(data=df_copy, aes(x=log2FC, y=-log10(adj.pvalue), col=log2FC,alpha==-log10(adj.pvalue))) + geom_point(size=0.01,show.legend = FALSE) + 
+    theme_light() + labs(y="-Log10(p.adj compared to CbbM_base)", x="Normalized weighted mean fitness") + theme(legend.position = "none")
+  
+  # color points
+  mycolors <- c(colours)
+  names(mycolors) <- c("DOWN", "UP", "NO")
+  p <- p  + scale_colour_gradient2(midpoint=1.0,mid=colours[3],low=colours[1], high=colours[2]) + theme(panel.grid.minor = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title=element_blank())
+ 
+  
+  # Now write down the name of genes beside the points...
+  # Create a new column "delabel" to de, that will contain the name of genes differentially expressed (NA in case they are not)
+  if(text){
+    p <- p + geom_text_repel(fontface="italic")   #geom_text()
+  }
+    
+  if(lines_padj_FC){
+    p <- p + geom_vline(xintercept=c(1-foldchange, 1+foldchange), linetype="dotted") +
+      geom_hline(yintercept=-log10(padjusted), linetype="dotted") # http://www.sthda.com/english/wiki/ggplot2-line-types-how-to-change-line-types-of-a-graph-in-r-software
+  }
+  return(p)
+}
+```
+
+```{r, warning=FALSE}
+volcano_width = 2
+volcano_height =2
+# CL_N2
+subset_volcano <- unique(subset(fitness_data, fitness_data$condition=="CL_N2")[,c("sgRNA_target","p_fit_adj_WT","norm","num_barcodes")])
+names(subset_volcano) <- c("gene_names_ordered_locus","adj.pvalue","log2FC","num_barcodes")
+p <- volcanoPlot_ggplot(subset_volcano, text=FALSE, colours=c("#199e77ff", "#da5f02ff", "#d3d3d3b2"), foldchange=0.1)
+ggsave("../EDA_output/diagnostic_plots/Volcano_CLN2_cutoff.pdf", plot=p, width=volcano_width, height=volcano_height)
+p <- volcanoPlot_gradient_ggplot(subset_volcano, text=FALSE, colours=c("#199e77ff", "#da5f02ff", "#d3d3d3b2"), foldchange=0.1)
+p
+ggsave("../EDA_output/diagnostic_plots/Volcano_gradient_CLN2_cutoff.pdf", plot=p, width=volcano_width, height=volcano_height)
+
+subset_volcano <- unique(subset(subset_volcano, !subset_volcano$gene_names_ordered_locus=="WT"))
+p <- ggplot(subset_volcano, aes(x=num_barcodes, y=-log10(adj.pvalue))) + geom_point(size=0.001, color="#4a4a4aff") + theme_light() + ylab("-Log10(p.adj compared to CbbM_base)") + xlab("Number of barcodes") + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=0.4) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8))
+p
+ggsave("../EDA_output/diagnostic_plots/CLN2_scatter_numBarcodes_padj.pdf", plot=p, width=volcano_width, height=volcano_height)
+correlation <- cor.test(subset_volcano$num_barcodes, -log10(subset_volcano$adj.pvalue), method = 'pearson')
+print(correlation)
+
+p <- ggplot(subset_volcano, aes(x=adj.pvalue)) + geom_histogram(bins=50) + theme_light() + ylab("Frequency") + xlab("Adjusted p value") + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8))
+p
+ggsave("../EDA_output/diagnostic_plots/CLN2_pValue_plot.pdf", plot=p, width=volcano_width, height=volcano_height)
+
+# CL_O2
+subset_volcano <- unique(subset(fitness_data, fitness_data$condition=="CL_O2")[,c("sgRNA_target","p_fit_adj_WT","norm","num_barcodes")])
+names(subset_volcano) <- c("gene_names_ordered_locus","adj.pvalue","log2FC","num_barcodes")
+p <- volcanoPlot_ggplot(subset_volcano, text=FALSE, colours=c("#199e77ff", "#da5f02ff", "#d3d3d3b2"), foldchange=0.1)
+ggsave("../EDA_output/diagnostic_plots/Volcano_CLO2_cutoff.pdf", plot=p, width=volcano_width, height=volcano_height)
+p <- volcanoPlot_gradient_ggplot(subset_volcano, text=FALSE, colours=c("#199e77ff", "#da5f02ff", "#d3d3d3b2"), foldchange=0.1)
+p
+ggsave("../EDA_output/diagnostic_plots/Volcano_gradient_CLO2_cutoff.pdf", plot=p, width=volcano_width, height=volcano_height)
+
+subset_volcano <- subset(subset_volcano, !subset_volcano$gene_names_ordered_locus=="WT")
+p <- ggplot(subset_volcano, aes(x=num_barcodes, y=-log10(adj.pvalue))) + geom_point(size=0.001, color="#4a4a4aff") + theme_light() + ylab("-Log10(p.adj compared to CbbM_base)") + xlab("Number of barcodes") + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=0.4) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) #+ xlim(c(0,25))
+p
+ggsave("../EDA_output/diagnostic_plots/CL_O2_scatter_numBarcodes_padj.pdf", plot=p, width=volcano_width, height=volcano_height)
+correlation <- cor.test(subset_volcano$num_barcodes, -log10(subset_volcano$adj.pvalue), method = 'pearson')
+print(correlation)
+
+p <- ggplot(subset_volcano, aes(x=adj.pvalue)) + geom_histogram(bins=50) + theme_light() + ylab("Frequency") + xlab("Adjusted p value") + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8))
+p
+ggsave("../EDA_output/diagnostic_plots/CLO2_pValue_plot.pdf", plot=p, width=volcano_width, height=volcano_height)
+
+# LD
+subset_volcano <- unique(subset(fitness_data, fitness_data$condition=="LD")[,c("sgRNA_target","p_fit_adj_WT","norm","num_barcodes")])
+names(subset_volcano) <- c("gene_names_ordered_locus","adj.pvalue","log2FC","num_barcodes")
+p <- volcanoPlot_ggplot(subset_volcano, text=FALSE, colours=c("#199e77ff", "#da5f02ff", "#d3d3d3b2"), foldchange=0.1)
+ggsave("../EDA_output/diagnostic_plots/Volcano_LD_cutoff.pdf", plot=p, width=volcano_width, height=volcano_height)
+p <- volcanoPlot_gradient_ggplot(subset_volcano, text=FALSE, colours=c("#199e77ff", "#da5f02ff", "#d3d3d3b2"), foldchange=0.1)
+p
+ggsave("../EDA_output/diagnostic_plots/Volcano_gradient_LD_cutoff.pdf", width=volcano_width, height=volcano_height)
+
+subset_volcano <- subset(subset_volcano, !subset_volcano$gene_names_ordered_locus=="WT")
+p <- ggplot(subset_volcano, aes(x=num_barcodes, y=-log10(adj.pvalue))) + geom_point(size=0.001, color="#4a4a4aff") + theme_light() + ylab("-Log10(p.adj compared to CbbM_base)") + xlab("Number of barcodes") + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=0.4) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) #+ xlim(c(0,25))
+p
+ggsave("../EDA_output/diagnostic_plots/LD_scatter_numBarcodes_padj.pdf", plot=p, width=volcano_width, height=volcano_height)
+correlation <- cor.test(subset_volcano$num_barcodes, -log10(subset_volcano$adj.pvalue), method = 'pearson')
+print(correlation)
+
+p <- ggplot(subset_volcano, aes(x=adj.pvalue)) + geom_histogram(bins=50) + theme_light() + ylab("Frequency") + xlab("Adjusted p value") + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8))
+p
+ggsave("../EDA_output/diagnostic_plots/LD_pValue_plot.pdf", plot=p, width=volcano_width, height=volcano_height)
+
+```
+
+```{r, echo=FALSE}
+subset_volcano <- unique(fitness_data[,c("sgRNA_target","p_fit_adj_WT","norm","num_barcodes", "condition")])
+names(subset_volcano) <- c("gene_names_ordered_locus","adj.pvalue","log2FC","num_barcodes", "condition")
+
+fc <- 0.1
+subset_volcano$diffexpressed <- "NO"
+subset_volcano$diffexpressed[subset_volcano$log2FC > 1+fc & subset_volcano$adj.pvalue < 0.05] <- "UP"
+subset_volcano$diffexpressed[subset_volcano$log2FC < 1-fc & subset_volcano$adj.pvalue < 0.05] <- "DOWN"
+
+p <- ggplot(data=subset_volcano, aes(x=log2FC, y=-log10(adj.pvalue), col=diffexpressed)) + geom_point(size=0.01,alpha=0.3, show.legend = FALSE) + theme_light() + labs(y="-Log10(p.adj compared to CbbM_base)", x="Normalized weighted mean fitness") + theme(legend.position = "none")
+  
+volcanocolours <- c("#199e77ff", "#da5f02ff", "#d3d3d3b2")
+names(volcanocolours) <- c("DOWN", "UP", "NO")
+p <- p  + scale_colour_manual(values = volcanocolours) + theme(panel.grid.minor = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title=element_blank()) +facet_wrap(~condition)
+
+p <- p + geom_vline(xintercept=c(1-fc, 1+fc), linetype="dotted") +
+  geom_hline(yintercept=-log10(0.05), linetype="dotted")
+
+p
+ggsave("../EDA_output/diagnostic_plots/Volcano.pdf", plot=p, width=6.8, height=2, units="in")
+```
+
+## Scatter plots number barcodes to adjusted p values, histogram of p values
+
+```{r, warning=FALSE}
+fitness_subset <- unique(fitness_data[,c("condition","sgRNA_target","p_fit_adj_WT","norm","num_barcodes")])
+names(fitness_subset) <- c("condition","gene_names_ordered_locus","adj.pvalue","log2FC","num_barcodes")
+subset_volcano <- subset(fitness_subset, !fitness_subset$gene_names_ordered_locus=="WT")
+p <- ggplot(subset_volcano, aes(x=num_barcodes, y=-log10(adj.pvalue))) + geom_point(size=0.001, color="#4a4a4aff") + theme_light() + ylab("-Log10(p.adj compared to CbbM_base)") + xlab("Number of barcodes") + facet_wrap(~condition) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) # + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=0.4)
+p
+ggsave("../EDA_output/diagnostic_plots/scatter_numBarcodes_padj.pdf", plot=p, width=6.8, height=2, units="in")
+rm(fitness_subset)
+
+p <- ggplot(subset_volcano, aes(x=adj.pvalue)) + geom_histogram(bins=50) + theme_light() + ylab("Frequency") + xlab("Adjusted p value") + facet_wrap(~condition) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8))
+p
+ggsave("../EDA_output/diagnostic_plots/pValue_plot.pdf", plot=p, width=6.8, height=2, units="in")
+
+rm(subset_volcano)
+```
+
+
+## Create table with stdev, variance and plot histogram thereof
+
+```{r, warning=FALSE}
+fitness_stdev <- unique(fitness_data[,c("sgRNA", "sgRNA_target", "fitness", "condition","norm","num_barcodes")])
+fitness_stdev <- dplyr::left_join(
+  fitness_stdev,
+  fitness_stdev %>%
+    dplyr::group_by(sgRNA_target, condition) %>%
+    dplyr::summarize(
+      .groups = "keep", 
+      # get max lfcSE
+      sd_fitness = sd(fitness)
+    )
+)
+fitness_stdev$sgRNA <- NULL
+fitness_stdev$fitness <- NULL
+fitness_stdev <- unique(fitness_stdev)
+p <- ggplot(fitness_stdev, aes(x=sd_fitness)) + geom_histogram(bins=50) + theme_light() + ylab("Frequency") + xlab("Standard deviation of fitness values") + facet_wrap(~condition)+ theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8))
+p
+ggsave("../EDA_output/diagnostic_plots/histogram_stdev.pdf", plot=p, width=6.8, height=2, units="in")
+
+fitness_stdev$variance <- fitness_stdev$sd_fitness^2
+p <- ggplot(fitness_stdev, aes(x=variance)) + geom_histogram(bins=50) + theme_light() + ylab("Frequency") + xlab("Variance of fitness values") + facet_wrap(~condition)+ theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8))
+p
+ggsave("../EDA_output/diagnostic_plots/histogram_variance.pdf", plot=p, width=6.8, height=2, units="in")
+```
+
+```{r}
+fitness_stdev[is.na(fitness_stdev$sd_fitness),]$sd_fitness <- median(fitness_stdev[fitness_stdev$condition=="CL_N2",]$sd_fitness,na.rm=TRUE)
+write_tsv(unique(fitness_stdev[,c("condition", "sgRNA_target", "norm","sd_fitness")]), "../EDA_output/MoCHI/variant_stdev.csv")
+rm(fitness_stdev)
 ```
 
 # Exploratory data analysis
@@ -294,6 +543,7 @@ for(cond in unique(plot_subset$condition)){
   print("Below 0, percentage")
   print(nrow(subset(temp_subs, temp_subs$norm < 0))/nrow(temp_subs))
 }
+rm(temp_subs)
 ```
 
 ### Saturational library
@@ -341,6 +591,7 @@ p <- ggplot(fitness_data_2, aes(x=norm, fill=category, color=category, linetype=
 p
 ggsave("../EDA_output/pdf/density_compareCombiSatur.pdf", plot=p, width=10, height=4, units="cm")
 ggsave("../EDA_output/png/density_compareCombiSatur.png", plot=p)
+rm(fitness_data_2)
 ```
 
 ## Overview growth all variants
@@ -514,6 +765,7 @@ p <- ggplot(combinatorial_wide, aes(x=number_muts, y=norm, fill=number_muts, col
 p
 ggsave("../EDA_output/pdf/bar_fitness_data_numberMuts_onlyCombi.pdf", p, width=30, height=18, units="cm")
 ggsave("../EDA_output/png/bar_fitness_data_numberMuts_onlyCombi.png", p, width=30, height=18, units="cm")
+rm(lm_fitness_data)
 ```
 
 When only checking variants with fitness values significantly different to the "wild-type" sequence, this pattern gets dampened, even though there is still some trend in this direction observable with more and more variants showing relatively high scores.
@@ -539,28 +791,33 @@ dotsize <- 0.02
 pointshape <- 16
 alphalevel <- 0.4
 line_width_for_plots <- 0.4
-red_fitness <- unique(fitness_data[c("sgRNA_target", "norm", "condition", "category", "EVcoup_predict", "DeepSeq_predict", "MSA_Transform", "additive_score", "proteinNPT_predict")])
+red_fitness <- unique(fitness_data[c("sgRNA_target", "norm", "condition", "category", "EVcoup_predict", "DeepSeq_predict", "MSA_Transform", "additive_score", "proteinNPT_predict", "MoCHI_mean", "MoCHI_sd")])
 red_fitness[red_fitness$category=="combiANDsatur",]$category <- "saturational"
 red_fitness <- subset(red_fitness, red_fitness$category != "notExpected")
 red_fitness[red_fitness$category=="WT",]$EVcoup_predict <- 0
+red_fitness_allConditions <- red_fitness
+red_fitness_oneCondition <- subset(red_fitness, red_fitness$condition=="CL_N2")
+red_fitness_allConditions_noNA_DeepSeq <- subset(red_fitness_allConditions, !is.na(red_fitness_allConditions$DeepSeq_predict))
+red_fitness_oneCondition_noNA_DeepSeq <- subset(red_fitness_oneCondition, !is.na(red_fitness_oneCondition$DeepSeq_predict))
+rm(red_fitness)
 ```
 
 ### Comparison EVmutation, DeepSequence
 
 ```{r}
-red_fitness_noNA_DeepSeq <- subset(red_fitness, !is.na(red_fitness$DeepSeq_predict))
-
 for(cat in c("combinatorial", "saturational")){
   print(cat)
-  subset_forLoop <- subset(red_fitness_noNA_DeepSeq, red_fitness_noNA_DeepSeq$category==cat & red_fitness_noNA_DeepSeq$condition=="CL_N2")
+  subset_forLoop <- subset(red_fitness_oneCondition_noNA_DeepSeq, red_fitness_oneCondition_noNA_DeepSeq$category==cat & red_fitness_oneCondition_noNA_DeepSeq$condition=="CL_N2")
   lm <- lm(DeepSeq_predict~EVcoup_predict, subset_forLoop)
   correlation <- cor.test(subset_forLoop$EVcoup_predict, subset_forLoop$DeepSeq_predict, method = 'spearman')
+  print(nrow(subset_forLoop))
   print(correlation)
   correlation <- cor.test(subset_forLoop$EVcoup_predict, subset_forLoop$DeepSeq_predict, method = 'pearson')
+  print(nrow(subset_forLoop))
   print(correlation)
 }
 
-scat <- ggplot(red_fitness_noNA_DeepSeq, aes(x=EVcoup_predict, y=DeepSeq_predict, color=category, alpha=category, linetype=category, shape=category, size=category)) + geom_point() + scale_shape_manual(values=combi_sat_shape) + scale_size_manual(values=combi_sat_size) + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + theme_light() + xlab("EVcouplings fitness prediction") + ylab("DeepSequence fitness prediction") + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title = element_blank())
+scat <- ggplot(red_fitness_oneCondition_noNA_DeepSeq, aes(x=EVcoup_predict, y=DeepSeq_predict, color=category, alpha=category, linetype=category, shape=category, size=category)) + geom_point() + scale_shape_manual(values=combi_sat_shape) + scale_size_manual(values=combi_sat_size) + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + theme_light() + xlab("EVcouplings fitness prediction") + ylab("DeepSequence fitness prediction") + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title = element_blank())
 scat
 ggsave("../EDA_output/pdf/scatter_DeepSeq_EVcoup.pdf", scat, width=2, height=2, units="in")
 ggsave("../EDA_output/png/scatter_DeepSeq_EVcoup.png", scat, width=2, height=2, units="in")
@@ -571,15 +828,17 @@ ggsave("../EDA_output/png/scatter_DeepSeq_EVcoup.png", scat, width=2, height=2, 
 ```{r}
 for(cat in c("combinatorial", "saturational")){
   print(cat)
-  subset_forLoop <- subset(red_fitness_noNA_DeepSeq, red_fitness_noNA_DeepSeq$category==cat & red_fitness_noNA_DeepSeq$condition=="CL_N2")
+  subset_forLoop <- subset(red_fitness_oneCondition, red_fitness_oneCondition$category==cat & red_fitness_oneCondition$condition=="CL_N2")
   print(nrow(subset_forLoop))
   correlation <- cor.test(subset_forLoop$EVcoup_predict, subset_forLoop$MSA_Transform, method = 'spearman')
+  print(nrow(subset_forLoop))
   print(correlation)
   correlation <- cor.test(subset_forLoop$EVcoup_predict, subset_forLoop$MSA_Transform, method = 'pearson')
+  print(nrow(subset_forLoop))
   print(correlation)
 }
 
-scat <- ggplot(red_fitness_noNA_DeepSeq, aes(x=EVcoup_predict, y=MSA_Transform, color=category, alpha=category, linetype=category, shape=category, size=category)) + geom_point() + scale_shape_manual(values=combi_sat_shape) + scale_size_manual(values=combi_sat_size) + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + theme_light() + xlab("EVcouplings fitness prediction") + ylab("MSA Transform fitness prediction") + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title = element_blank())
+scat <- ggplot(red_fitness_oneCondition, aes(x=EVcoup_predict, y=MSA_Transform, color=category, alpha=category, linetype=category, shape=category, size=category)) + geom_point() + scale_shape_manual(values=combi_sat_shape) + scale_size_manual(values=combi_sat_size) + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + theme_light() + xlab("EVcouplings fitness prediction") + ylab("MSA Transform fitness prediction") + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title = element_blank())
 scat
 ggsave("../EDA_output/pdf/scatter_MSA_Transform_EVcoup.pdf", scat, width=2, height=2, units="in")
 ggsave("../EDA_output/png/scatter_MSA_Transform_EVcoup.png", scat, width=2, height=2, units="in")
@@ -587,10 +846,8 @@ ggsave("../EDA_output/png/scatter_MSA_Transform_EVcoup.png", scat, width=2, heig
 
 ### Comparison "additive score" and normalized fitness
 
-#### Pearson
-
 ```{r}
-red_fitness_noNA_additive <- subset(red_fitness, !is.na(red_fitness$additive_score))
+red_fitness_noNA_additive <- subset(red_fitness_allConditions, !is.na(red_fitness_allConditions$additive_score))
 # https://stackoverflow.com/questions/19699858/ggplot-adding-regression-line-equation-and-r2-with-facet
 lm_eqn = function(df){
     m = lm(additive_score ~ norm, df);
@@ -614,33 +871,17 @@ scat
 ggsave("../EDA_output/pdf/scatter_additive_combi.pdf", scat, width=6.8, height=2, units="in")
 ggsave("../EDA_output/png/scatter_additive_combi.png", scat, width=6.8, height=2, units="in")
 ```
-
-#### Spearman
-
 ```{r}
-red_fitness_noNA_additive <- subset(red_fitness, !is.na(red_fitness$additive_score))
-# https://stackoverflow.com/questions/19699858/ggplot-adding-regression-line-equation-and-r2-with-facet
-lm_eqn = function(df){
-    m = lm(additive_score ~ norm, df);
-    cor_form = cor.test(df$norm, df$additive_score, method = 'spearman')
-    eq <- substitute("rho ="~r, #italic(y) == a + b %.% italic(x)*" r2="~r2*" p= "~p*", Pearson's r="~r #Pearson's 
-         list(a = format(coef(m)[[1]], digits = 2), 
-              b = format(coef(m)[[2]], digits = 2), 
-             r2 = format(summary(m)$r.squared, digits = 3),
-             r = format(cor_form$estimate[[1]], digits=2),
-             p = format(cor_form$p.value[[1]], digits=2)))
-    as.character(as.expression(eq));                 
+for(cat in c("combinatorial")){
+  for(cond in c("CL_N2", "CL_O2", "LD")){
+    print(cond)
+    print(cat)
+    subset_forLoop <- subset(red_fitness_noNA_additive, red_fitness_noNA_additive$category==cat & red_fitness_noNA_additive$condition==cond)
+    print(nrow(subset_forLoop))
+    correlation <- cor.test(subset_forLoop$norm, subset_forLoop$additive_score, method = 'pearson')
+    print(correlation)
+  }
 }
-
-eq <- ddply(red_fitness_noNA_additive,.(condition),lm_eqn)
-
-p <- ggplot(data = red_fitness_noNA_additive, aes(x = norm, y = additive_score, color=category, alpha=category)) +
-            geom_point(aes(size=category), shape=pointshape) +
-            geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x,linetype="dashed", linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("Additive score") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_size_manual(values=combi_sat_size) + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat)
-scat = p + geom_text(data=eq,aes(x = -0.4, y = 1.8,label=V1), size=8, size.unit="pt", parse = TRUE, inherit.aes=FALSE) + facet_wrap(condition~.)
-scat
-ggsave("../EDA_output/pdf/scatter_additive_combi_Spearman.pdf", scat, width=6.8, height=2, units="in")
-ggsave("../EDA_output/png/scatter_additive_combi_Spearman.png", scat, width=6.8, height=2, units="in")
 ```
 
 ### Comparison DeepSequence, normalized fitness
@@ -658,17 +899,35 @@ lm_eqn = function(df){
              cat2 = unique(df$category2)))
     as.character(as.expression(eq));                 
 }
-red_fitness_noNA_DeepSeq$category2 <- red_fitness_noNA_DeepSeq$category
-red_fitness_noNA_DeepSeq[red_fitness_noNA_DeepSeq$sgRNA_target=="WT",]$category2 <- "saturational"
-eq <- ddply(red_fitness_noNA_DeepSeq,.(condition, category2),lm_eqn)
+red_fitness_allConditions_noNA_DeepSeq$category2 <- red_fitness_allConditions_noNA_DeepSeq$category
+red_fitness_allConditions_noNA_DeepSeq[red_fitness_allConditions_noNA_DeepSeq$sgRNA_target=="WT",]$category2 <- "saturational"
+eq <- ddply(red_fitness_allConditions_noNA_DeepSeq,.(condition, category2),lm_eqn)
 
-red_fitness_noNA_DeepSeq_onlyComb_no4337 <- subset(red_fitness_noNA_DeepSeq, red_fitness_noNA_DeepSeq$category=="combinatorial" & !grepl("V337", red_fitness_noNA_DeepSeq$sgRNA_target))
-correlation <- cor.test(red_fitness_noNA_DeepSeq_onlyComb_no4337$norm, red_fitness_noNA_DeepSeq_onlyComb_no4337$DeepSeq_predict, method = 'spearman')
-correlation
-correlation <- cor.test(red_fitness_noNA_DeepSeq_onlyComb_no4337$norm, red_fitness_noNA_DeepSeq_onlyComb_no4337$DeepSeq_predict, method = 'pearson')
-correlation
+red_fitness_noNA_DeepSeq_onlyComb_no4337 <- subset(red_fitness_allConditions_noNA_DeepSeq, red_fitness_allConditions_noNA_DeepSeq$category=="combinatorial" & !grepl("V337", red_fitness_allConditions_noNA_DeepSeq$sgRNA_target))
 
-scat <- ggplot(data = red_fitness_noNA_DeepSeq, aes(x = norm, y = DeepSeq_predict, color=category, alpha=category, linetype=category2, shape=category)) +
+for(cat in c("combinatorial", "saturational")){
+  for(cond in c("CL_N2", "CL_O2", "LD")){
+    print(cond)
+    print(cat)
+    subset_forLoop <- subset(red_fitness_allConditions_noNA_DeepSeq, red_fitness_allConditions_noNA_DeepSeq$category==cat & red_fitness_allConditions_noNA_DeepSeq$condition==cond)
+    print(nrow(subset_forLoop))
+    correlation <- cor.test(subset_forLoop$norm, subset_forLoop$DeepSeq_predict, method = 'pearson')
+    print(correlation)
+  }
+}
+
+for(cat in c("combinatorial")){
+  for(cond in c("CL_N2", "CL_O2", "LD")){
+    print(cond)
+    print(cat)
+    subset_forLoop <- subset(red_fitness_noNA_DeepSeq_onlyComb_no4337, red_fitness_noNA_DeepSeq_onlyComb_no4337$category==cat & red_fitness_noNA_DeepSeq_onlyComb_no4337$condition==cond)
+    print(nrow(subset_forLoop))
+    correlation <- cor.test(subset_forLoop$norm, subset_forLoop$DeepSeq_predict, method = 'pearson')
+    print(correlation)
+  }
+}
+
+scat <- ggplot(data = red_fitness_allConditions_noNA_DeepSeq, aes(x = norm, y = DeepSeq_predict, color=category, alpha=category, linetype=category2, shape=category)) +
             geom_point(aes(size=category)) + scale_size_manual(values=combi_sat_size) + scale_shape_manual(values=combi_sat_shape) + 
             geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("DeepSequence prediction") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + facet_wrap(condition~.)
 scat = scat + geom_text(data=eq,aes(x = 0.5, y =-15, label=V1), vjust=c(0,1.2,0,1.2,0,1.2), parse = TRUE, inherit.aes=FALSE, size=8, size.unit="pt") + facet_wrap(condition~.)
@@ -692,7 +951,7 @@ ggsave("../EDA_output/png/scatter_DeepSeq_norm_noV323.png", scat, width=6.8, hei
 ### Comparison EVmutation, normalized fitness
 
 ```{r}
-red_fitness_noNA_EVcoup <- subset(red_fitness, !is.na(red_fitness$EVcoup_predict))
+red_fitness_noNA_EVcoup <- subset(red_fitness_allConditions, !is.na(red_fitness_allConditions$EVcoup_predict))
 
 lm_eqn = function(df){
     m = lm(EVcoup_predict ~ norm, df);
@@ -711,10 +970,28 @@ red_fitness_noNA_EVcoup[red_fitness_noNA_EVcoup$sgRNA_target=="WT",]$category2 <
 eq <- ddply(red_fitness_noNA_EVcoup,.(condition, category2),lm_eqn)
 
 red_fitness_noNA_EVcoup_no4337 <- subset(red_fitness_noNA_EVcoup, red_fitness_noNA_EVcoup$category=="combinatorial" & !grepl("V337", red_fitness_noNA_EVcoup$sgRNA_target))
-correlation <- cor.test(red_fitness_noNA_EVcoup_no4337$norm, red_fitness_noNA_EVcoup_no4337$EVcoup_predict, method = 'spearman')
-correlation
-correlation <- cor.test(red_fitness_noNA_EVcoup_no4337$norm, red_fitness_noNA_EVcoup_no4337$EVcoup_predict, method = 'pearson')
-correlation
+
+for(cat in c("combinatorial", "saturational")){
+  for(cond in c("CL_N2", "CL_O2", "LD")){
+    print(cond)
+    print(cat)
+    subset_forLoop <- subset(red_fitness_noNA_EVcoup, red_fitness_noNA_EVcoup$category==cat & red_fitness_noNA_EVcoup$condition==cond)
+    print(nrow(subset_forLoop))
+    correlation <- cor.test(subset_forLoop$norm, subset_forLoop$EVcoup_predict, method = 'pearson')
+    print(correlation)
+  }
+}
+
+for(cat in c("combinatorial")){
+  for(cond in c("CL_N2", "CL_O2", "LD")){
+    print(cond)
+    print(cat)
+    subset_forLoop <- subset(red_fitness_noNA_EVcoup_no4337, red_fitness_noNA_EVcoup_no4337$category==cat & red_fitness_noNA_EVcoup_no4337$condition==cond)
+    print(nrow(subset_forLoop))
+    correlation <- cor.test(subset_forLoop$norm, subset_forLoop$EVcoup_predict, method = 'pearson')
+    print(correlation)
+  }
+}
 
 scat <- ggplot(data = red_fitness_noNA_EVcoup, aes(x = norm, y = EVcoup_predict, color=category, alpha=category, linetype=category2, shape=category)) +
             geom_point(aes(size=category)) + scale_size_manual(values=combi_sat_size) + scale_shape_manual(values=combi_sat_shape) +
@@ -752,11 +1029,11 @@ lm_eqn = function(df){
              cat2 = unique(df$category2)))
     as.character(as.expression(eq));                 
 }
-red_fitness_noNA_DeepSeq$category2 <- red_fitness_noNA_DeepSeq$category
-red_fitness_noNA_DeepSeq[red_fitness_noNA_DeepSeq$sgRNA_target=="WT",]$category2 <- "saturational"
-eq <- ddply(red_fitness_noNA_DeepSeq,.(condition, category2),lm_eqn)
+red_fitness_allConditions$category2 <- red_fitness_allConditions$category
+red_fitness_allConditions[red_fitness_allConditions$sgRNA_target=="WT",]$category2 <- "saturational"
+eq <- ddply(red_fitness_allConditions,.(condition, category2),lm_eqn)
 
-scat <- ggplot(data = red_fitness_noNA_DeepSeq, aes(x = norm, y = MSA_Transform, color=category, alpha=category, linetype=category2, shape=category)) +
+scat <- ggplot(data = red_fitness_allConditions, aes(x = norm, y = MSA_Transform, color=category, alpha=category, linetype=category2, shape=category)) +
             geom_point(aes(size=category)) + scale_size_manual(values=combi_sat_size) + scale_shape_manual(values=combi_sat_shape) + 
             geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("MSATransformer (ensemble) prediction") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + facet_wrap(condition~.)
 scat = scat + geom_text(data=eq,aes(x = 0.5, y =-10, label=V1), size=8, size.unit="pt", vjust=c(0,1.2,0,1.2,0,1.2), parse = TRUE, inherit.aes=FALSE) + facet_wrap(condition~.)
@@ -764,11 +1041,12 @@ scat
 ggsave("../EDA_output/pdf/scatter_MSA_Transform_norm.pdf", scat, width=6.8, height=2, units="in")
 ggsave("../EDA_output/png/scatter_MSA_Transform_norm.png", scat, width=6.8, height=2, units="in")
 
-red_fitness_noNA_DeepSeq_onlyComb_no4337$category2 <- red_fitness_noNA_DeepSeq_onlyComb_no4337$category
-red_fitness_noNA_DeepSeq_onlyComb_no4337[red_fitness_noNA_DeepSeq_onlyComb_no4337$sgRNA_target=="WT",]$category2 <- "saturational"
-eq <- ddply(red_fitness_noNA_DeepSeq_onlyComb_no4337,.(condition, category2),lm_eqn)
+red_fitness_allConditions_no4337 <- subset(red_fitness_allConditions, red_fitness_allConditions$category=="combinatorial" & !grepl("V337", red_fitness_allConditions$sgRNA_target))
+red_fitness_allConditions_no4337$category2 <- red_fitness_allConditions_no4337$category
+red_fitness_allConditions_no4337[red_fitness_allConditions_no4337$sgRNA_target=="WT",]$category2 <- "saturational"
+eq <- ddply(red_fitness_allConditions_no4337,.(condition, category2),lm_eqn)
 
-scat <- ggplot(data = red_fitness_noNA_DeepSeq_onlyComb_no4337, aes(x = norm, y = MSA_Transform, color=category, alpha=category, linetype=category2, shape=category)) +
+scat <- ggplot(data = red_fitness_allConditions_no4337, aes(x = norm, y = MSA_Transform, color=category, alpha=category, linetype=category2, shape=category)) +
             geom_point(aes(size=category)) + scale_size_manual(values=combi_sat_size) + scale_shape_manual(values=combi_sat_shape) + 
             geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("MSATransformer (ensemble) prediction") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + facet_wrap(condition~.)
 scat = scat + geom_text(data=eq,aes(x = 0.5, y =-10, label=V1), size=8, size.unit="pt", parse = TRUE, inherit.aes=FALSE) + facet_wrap(condition~.)
@@ -777,10 +1055,36 @@ ggsave("../EDA_output/pdf/scatter_MSA_Transform_norm_noV323.pdf", scat, width=6.
 ggsave("../EDA_output/png/scatter_MSA_Transform_norm_noV323.png", scat, width=6.8, height=2, units="in")
 ```
 
+```{r}
+for(cat in c("combinatorial", "saturational")){
+  for(cond in c("CL_N2", "CL_O2", "LD")){
+    print(cond)
+    print(cat)
+    subset_forLoop <- subset(red_fitness_allConditions, red_fitness_allConditions$category==cat & red_fitness_allConditions$condition==cond)
+    print(nrow(subset_forLoop))
+    correlation <- cor.test(subset_forLoop$norm, subset_forLoop$MSA_Transform, method = 'pearson')
+    print(correlation)
+  }
+}
+```
+
+```{r}
+for(cat in c("combinatorial")){
+  for(cond in c("CL_N2", "CL_O2", "LD")){
+    print(cond)
+    print(cat)
+    subset_forLoop <- subset(red_fitness_allConditions_no4337, red_fitness_allConditions_no4337$category==cat & red_fitness_allConditions_no4337$condition==cond)
+    print(nrow(subset_forLoop))
+    correlation <- cor.test(subset_forLoop$norm, subset_forLoop$MSA_Transform, method = 'pearson')
+    print(correlation)
+  }
+}
+```
+
 ### Comparison ProteinNPT, normalized fitness
 
 ```{r}
-df_proteinNPT <- subset(red_fitness, !is.na(red_fitness$proteinNPT_predict))
+df_proteinNPT <- subset(red_fitness_allConditions, !is.na(red_fitness_allConditions$proteinNPT_predict))
 
 lm_eqn = function(df){
     m = lm(proteinNPT_predict ~ norm, df);
@@ -805,7 +1109,22 @@ scat = scat + geom_text(data=eq,aes(x = 0.5, y =-2, label=V1), size=8, size.unit
 scat
 ggsave("../EDA_output/pdf/scatter_proteinNPT_norm.pdf", scat, width=6.8, height=2, units="in")
 ggsave("../EDA_output/png/scatter_proteinNPT_norm.png", scat, width=6.8, height=2, units="in")
+```
 
+```{r}
+for(cat in c("combinatorial")){
+  for(cond in c("CL_N2", "CL_O2", "LD")){
+    print(cond)
+    print(cat)
+    subset_forLoop <- subset(df_proteinNPT, df_proteinNPT$category==cat & df_proteinNPT$condition==cond)
+    print(nrow(subset_forLoop))
+    correlation <- cor.test(subset_forLoop$norm, subset_forLoop$proteinNPT_predict, method = 'pearson')
+    print(correlation)
+  }
+}
+```
+
+```{r}
 df_proteinNPT_noV323 <- subset(df_proteinNPT, !grepl("V337", df_proteinNPT$sgRNA_target))
 
 df_proteinNPT_noV323$category2 <- df_proteinNPT_noV323$category
@@ -819,8 +1138,22 @@ scat = scat + geom_text(data=eq,aes(x = 0.5, y =-2, label=V1), size=8, size.unit
 scat
 ggsave("../EDA_output/pdf/scatter_proteinNPT_norm_noV323.pdf", scat, width=6.8, height=2, units="in")
 ggsave("../EDA_output/png/scatter_proteinNPT_norm_noV323.png", scat, width=6.8, height=2, units="in")
+```
 
+```{r}
+for(cat in c("combinatorial")){
+  for(cond in c("CL_N2", "CL_O2", "LD")){
+    print(cond)
+    print(cat)
+    subset_forLoop <- subset(df_proteinNPT_noV323, df_proteinNPT_noV323$category==cat & df_proteinNPT_noV323$condition==cond)
+    print(nrow(subset_forLoop))
+    correlation <- cor.test(subset_forLoop$norm, subset_forLoop$proteinNPT_predict, method = 'pearson')
+    print(correlation)
+  }
+}
+```
 
+```{r}
 lm_eqn = function(df){
     m = lm(proteinNPT_predict ~ norm, df);
     cor_form = cor.test(df$norm, df$proteinNPT_predict, method = 'spearman')
@@ -851,13 +1184,143 @@ ggsave("../EDA_output/png/scatter_proteinNPT_norm_spearman.png", scat, width=6.8
 ```{r}
 scat <- ggplot(df_proteinNPT, aes(x=proteinNPT_predict, y=MSA_Transform, color=category, alpha=category, linetype=category, shape=category, size=category)) + geom_point() + scale_shape_manual(values=combi_sat_shape) + scale_size_manual(values=combi_sat_size) + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + theme_light() + xlab("ProteinNPT fitness prediction") + ylab("MSA Transform fitness prediction") + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title = element_blank()) + facet_wrap(condition~.)
 scat
-ggsave("../EDA_output/pdf/scatter_MSA_Transform_proteinNPT.pdf", scat, width=2, height=2, units="in")
-ggsave("../EDA_output/png/scatter_MSA_Transform_proteinNPT.png", scat, width=2, height=2, units="in")
+ggsave("../EDA_output/pdf/scatter_MSA_Transform_proteinNPT.pdf", scat, width=6.8, height=2, units="in")
+ggsave("../EDA_output/png/scatter_MSA_Transform_proteinNPT.png", scat, width=6.8, height=2, units="in")
+```
 
-scat <- ggplot(df_proteinNPT, aes(x=proteinNPT_predict, y=additive_score, color=category, alpha=category, linetype=category, shape=category, size=category)) + geom_point() + scale_shape_manual(values=combi_sat_shape) + scale_size_manual(values=combi_sat_size) + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + theme_light() + xlab("ProteinNPT fitness prediction") + ylab("Additive score fitness prediction") + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + theme(panel.grid.minor =element_blank(), legend.position = "none", strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title = element_blank()) + facet_wrap(condition~.)
+```{r}
+for(cat in c("combinatorial")){
+  for(cond in c("CL_N2", "CL_O2", "LD")){
+    print(cond)
+    print(cat)
+    subset_forLoop <- subset(df_proteinNPT, df_proteinNPT$category==cat & df_proteinNPT$condition==cond)
+    print(nrow(subset_forLoop))
+    correlation <- cor.test(subset_forLoop$proteinNPT_predict, subset_forLoop$MSA_Transform, method = 'pearson')
+    print(correlation)
+  }
+}
+```
+
+### Comparison additive score, ProteinNPT
+
+```{r}
+lm_eqn = function(df){
+    m = lm(additive_score ~ proteinNPT_predict, df);
+    cor_form = cor.test(df$proteinNPT_predict, df$additive_score, method = 'pearson')
+    eq <- substitute("r ="~r*~cat2, #italic(y) == a + b %.% italic(x)*" r2="~r2*" p= "~p*", Pearson's r="~r #Pearson's 
+         list(a = format(coef(m)[[1]], digits = 2), 
+              b = format(coef(m)[[2]], digits = 2), 
+             r2 = format(summary(m)$r.squared, digits = 3),
+             r = format(cor_form$estimate[[1]], digits=2),
+             p = format(cor_form$p.value[[1]], digits=2),
+             cat2 = unique(df$category2)))
+    as.character(as.expression(eq));                 
+}
+df_proteinNPT$category2 <- df_proteinNPT$category
+df_proteinNPT[df_proteinNPT$sgRNA_target=="WT",]$category2 <- "saturational"
+eq <- ddply(df_proteinNPT,.(condition, category2),lm_eqn)
+
+scat <- ggplot(df_proteinNPT, aes(x=proteinNPT_predict, y=additive_score, color=category, alpha=category, linetype=category, shape=category, size=category)) + geom_point() + scale_shape_manual(values=combi_sat_shape) + scale_size_manual(values=combi_sat_size) + geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + theme_light() + xlab("ProteinNPT fitness prediction") + ylab("Additive score fitness prediction") + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + theme(panel.grid.minor =element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8), legend.title = element_blank()) + facet_wrap(condition~.)
+scat = scat + geom_text(data=eq,aes(x = 0.5, y =-2, label=V1), size=8, size.unit="pt", parse = TRUE, inherit.aes=FALSE) + facet_wrap(condition~.)
 scat
-ggsave("../EDA_output/pdf/scatter_additiveScore_proteinNPT.pdf", scat, width=2, height=2, units="in")
-ggsave("../EDA_output/png/scatter_additiveScore_proteinNPT.png", scat, width=2, height=2, units="in")
+ggsave("../EDA_output/pdf/scatter_additiveScore_proteinNPT.pdf", scat, width=6.8, height=2, units="in")
+ggsave("../EDA_output/png/scatter_additiveScore_proteinNPT.png", scat, width=6.8, height=2, units="in")
+```
+
+```{r}
+for(cat in c("combinatorial")){
+  for(cond in c("CL_N2", "CL_O2", "LD")){
+    print(cond)
+    print(cat)
+    subset_forLoop <- subset(df_proteinNPT, df_proteinNPT$category==cat & df_proteinNPT$condition==cond)
+    print(nrow(subset_forLoop))
+    correlation <- cor.test(subset_forLoop$proteinNPT_predict, subset_forLoop$additive_score, method = 'pearson')
+    print(correlation)
+  }
+}
+```
+
+### Comparison MoCHI, normalized fitness
+
+```{r}
+lm_eqn = function(df){
+    m = lm(MoCHI_mean ~ norm, df);
+    cor_form = cor.test(df$norm, df$MoCHI_mean, method = 'pearson')
+    eq <- substitute("r ="~r*~cat2, #italic(y) == a + b %.% italic(x)*" r2="~r2*" p= "~p*", Pearson's r="~r #Pearson's 
+         list(a = format(coef(m)[[1]], digits = 2), 
+              b = format(coef(m)[[2]], digits = 2), 
+             r2 = format(summary(m)$r.squared, digits = 3),
+             r = format(cor_form$estimate[[1]], digits=2),
+             p = format(cor_form$p.value[[1]], digits=2),
+             cat2 = unique(df$category2)))
+    as.character(as.expression(eq));                 
+}
+red_fitness_allConditions$category2 <- red_fitness_allConditions$category
+red_fitness_allConditions[red_fitness_allConditions$sgRNA_target=="WT",]$category2 <- "saturational"
+eq <- ddply(red_fitness_allConditions,.(condition, category2),lm_eqn)
+
+scat <- ggplot(data = red_fitness_allConditions, aes(x = norm, y = MoCHI_mean, color=category, alpha=category, linetype=category2, shape=category)) +
+            geom_point(aes(size=category)) + scale_size_manual(values=combi_sat_size) + scale_shape_manual(values=combi_sat_shape) + 
+            geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + xlab("Normalized fitness") + ylab("MoCHI prediction") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + facet_wrap(condition~.)
+scat = scat + geom_text(data=eq,aes(x = 0.5, y =1.4, label=V1), vjust=c(0,1.2,0,1.2,0,1.2), parse = TRUE, inherit.aes=FALSE, size=8, size.unit="pt") + facet_wrap(condition~.)
+scat
+ggsave("../EDA_output/pdf/scatter_MoCHI_norm.pdf", scat, width=6.8, height=2, units="in")
+ggsave("../EDA_output/png/scatter_MoCHI_norm.png", scat, width=6.8, height=2, units="in")
+```
+
+```{r}
+for(cat in c("saturational","combinatorial")){
+  for(cond in c("CL_N2", "CL_O2", "LD")){
+    print(cond)
+    print(cat)
+    subset_forLoop <- subset(red_fitness_allConditions, red_fitness_allConditions$category==cat & red_fitness_allConditions$condition==cond)
+    print(nrow(subset_forLoop))
+    correlation <- cor.test(subset_forLoop$norm, subset_forLoop$MoCHI_mean, method = 'pearson')
+    print(correlation)
+  }
+}
+```
+
+### MoCHI to additive score
+
+```{r}
+red_fitness_noSat <- subset(red_fitness_allConditions, red_fitness_allConditions$category=="combinatorial")
+lm_eqn = function(df){
+    m = lm(MoCHI_mean ~ additive_score, df);
+    cor_form = cor.test(df$additive_score, df$MoCHI_mean, method = 'pearson')
+    eq <- substitute("r ="~r*~cat2, #italic(y) == a + b %.% italic(x)*" r2="~r2*" p= "~p*", Pearson's r="~r #Pearson's 
+         list(a = format(coef(m)[[1]], digits = 2), 
+              b = format(coef(m)[[2]], digits = 2), 
+             r2 = format(summary(m)$r.squared, digits = 3),
+             r = format(cor_form$estimate[[1]], digits=2),
+             p = format(cor_form$p.value[[1]], digits=2),
+             cat2 = unique(df$category2)))
+    as.character(as.expression(eq));                 
+}
+red_fitness_noSat$category2 <- red_fitness_noSat$category
+red_fitness_noSat[red_fitness_noSat$sgRNA_target=="WT",]$category2 <- "saturational"
+eq <- ddply(red_fitness_noSat,.(condition, category2),lm_eqn)
+
+scat <- ggplot(data = red_fitness_noSat, aes(x = additive_score, y = MoCHI_mean, color=category, alpha=category, linetype=category2, shape=category)) +
+            geom_point(aes(size=category)) + scale_size_manual(values=combi_sat_size) + scale_shape_manual(values=combi_sat_shape) + 
+            geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, linewidth=line_width_for_plots) + xlab("Additive score") + ylab("MoCHI prediction") + theme_light() + theme(panel.grid.minor =element_blank(), legend.title = element_blank(), strip.background=element_rect(fill = NA, color = "white"), strip.text.x = element_text(size = 8, colour = "black", hjust = 0), axis.text=element_text(size=8), axis.title=element_text(size=8), legend.text=element_text(size=8)) + scale_alpha_manual(values=combi_sat_alpha) + scale_color_manual(values=col_combi_sat) + scale_linetype_manual(values=c("combinatorial"="dashed", "saturational"="twodash")) + facet_wrap(condition~.)
+scat = scat + geom_text(data=eq,aes(x = 0.5, y =1.4, label=V1), parse = TRUE, inherit.aes=FALSE, size=8, size.unit="pt") + facet_wrap(condition~.)
+scat
+ggsave("../EDA_output/pdf/scatter_MoCHI_additive_score.pdf", scat, width=6.8, height=2, units="in")
+ggsave("../EDA_output/png/scatter_MoCHI_additive_score.png", scat, width=6.8, height=2, units="in")
+```
+
+```{r}
+for(cat in c("combinatorial")){
+  for(cond in c("CL_N2", "CL_O2", "LD")){
+    print(cond)
+    print(cat)
+    subset_forLoop <- subset(red_fitness_noSat, red_fitness_noSat$category==cat & red_fitness_noSat$condition==cond)
+    print(nrow(subset_forLoop))
+    correlation <- cor.test(subset_forLoop$additive_score, subset_forLoop$MoCHI_mean, method = 'pearson')
+    print(correlation)
+  }
+}
 ```
 
 ## Correlation conservation to fitness
@@ -894,6 +1357,17 @@ scat
 
 ggsave("../EDA_output/pdf/conservation_norm.pdf", scat, width=6.8, height=2, units="in")
 ggsave("../EDA_output/png/conservation_norm.png", scat, width=6.8, height=2, units="in")
+```
+
+```{r}
+for(cond in c("CL_N2", "CL_O2", "LD")){
+    print(cond)
+    subset_forLoop <- subset(cor_subs, cor_subs$condition==cond)
+    print(nrow(subset_forLoop))
+    correlation <- cor.test(subset_forLoop$averag_fitness, subset_forLoop$conservationScore, method = 'pearson')
+    print(correlation)
+}
+rm(subset_forLoop)
 ```
 
 ## Correlation surface exposure to fitness
@@ -954,6 +1428,17 @@ scat = scat + geom_text(data=eq,aes(x = 1.0, y =-0.05, label=V1), size=8, size.u
 scat
 ggsave("../EDA_output/pdf/relSAS_norm_onlyDimer.pdf", scat, width=6.8, height=2, units="in")
 ggsave("../EDA_output/png/relSAS_norm_onlyDimer.png", scat, width=30, height=18, units="cm")
+```
+
+```{r}
+for(cond in c("CL_N2", "CL_O2", "LD")){
+    print(cond)
+    subset_forLoop <- subset(surface, surface$condition==cond)
+    print(nrow(subset_forLoop))
+    correlation <- cor.test(subset_forLoop$averag_fitness, subset_forLoop$relSAS, method = 'pearson')
+    print(correlation)
+}
+rm(subset_forLoop)
 ```
 
 # Comparing different conditions
@@ -1633,6 +2118,17 @@ write_csv(long_format, "../EDA_output/SuppTable_all_fitness_values_long.csv")
 
 wide_format <- pivot_wider(long_format, names_from=condition, values_from=c(norm, p_fit_adj_WT))
 write_csv(wide_format, "../EDA_output/SuppTable_all_fitness_values_wide.csv")
+```
+
+## Misc
+
+K85N, F90A, and Y319T and combinatorial library; C4 (H127V, K247E, H251A, S432A), C5 (H127V, K247A, H251K, Q392E, S432I) and C6 (H127V, M140A, K247A, H251A, Q392E, S432T)
+
+```{r}
+list_of_tested_variants <- c("K99N","F104A","Y333T","H141V,K261E,H265A,S446A","H141V,K261A,H265K,Q406E,S446I","H141V,M154A,K261A,H265A,Q406E,S446T")
+subset_tested <- unique(subset(fitness_data, fitness_data$sgRNA_target %in% list_of_tested_variants)[,c("sgRNA_target","sgRNA","baseMean","num_barcodes")])
+subset_tested <- subset(subset_tested, !is.na(subset_tested$baseMean))
+write_csv(subset_tested, "../EDA_output/baseMean_testedVariants.csv")
 ```
 
 # Session Info {.unnumbered}

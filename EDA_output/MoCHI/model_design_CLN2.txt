@@ -1,0 +1,2 @@
+phenotype	transformation	trait	file
+Growth_CLN2	SumOfSigmoids	Growth	CL_N2_variant_stdev.tsv

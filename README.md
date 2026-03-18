@@ -43,7 +43,7 @@ Data to some of the Figures and Tables shown in Hoffmann & Knave et al. are avai
 | Supp. Table 4  | Proteomics data after 4 and 8 generations  | [.Rmd file for MS data](MS_firstCultivation/plot_MS_data.Rmd)  | [File as csv](MS_firstCultivation/tables/CCM_table_forPaper.csv), data for all proteins in MS comparisons in [same directory](MS_firstCultivation/tables)  |
 | Supp. Table 5  | Variants of CbbMbase with the highest normalized fitness score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as csv](EDA_output/goodVariants.csv)  |
 
-## Library design, zero-shot predictions and ProteinNPT
+## Library design, zero-shot predictions, ProteinNPT and MoCHI
 
 Library design was performed as published in [doi.org/10.1021/acssynbio.5c00065](https://doi.org/10.1021/acssynbio.5c00065) using code available in the [EVmut_inSilico repository](https://github.com/ute-hoffmann/EVmut_inSilico).
 
@@ -115,6 +115,18 @@ The [commit from Dec 23rd, 2024](https://github.com/OATML-Markslab/ProteinNPT/co
 
 [list_variants.txt](ProteinNPT/2025-02-04_create_testSet/list_variants.txt) includes single amino acid exchanges and combinatorial variants, which were combined in every possible manner using script [1_create_file_with_variants.py](ProteinNPT/2025-02-04_create_testSet/1_create_file_with_variants.py), yielding [list_combinations.txt](ProteinNPT/2025-02-04_create_testSet/list_combinations.txt). [Script 2_create_mutant_sequences_fromNewVariants.py](ProteinNPT/2025-02-04_create_testSet/2_create_mutant_sequences_fromNewVariants.py) was used to create [full-length sequences of these variants](ProteinNPT/2025-02-04_create_testSet/list_new_sequences.txt), which were combined with the list of experimental data for the measured library using (3_create_file_with_newVariants_compatible_with_trainingFile.py)[ProteinNPT/2025-02-04_create_testSet/3_create_file_with_newVariants_compatible_with_trainingFile.py]. Importantly, duplicated sequences were removed, yielding table [2025-02-09_predict_new_variants.csv](ProteinNPT/2025-02-04_create_testSet/2025-02-09_predict_new_variants.csv), which was used as input for [pipeline_predictNewVariants.sh](ProteinNPT/2025-02-10_predictions_new_variants/pipeline_predictNewVariants.sh).
 
+### MoCHI predictions
+
+All files related to MoCHI predictions are collected in [EDA_output/MoCHI](EDA_output/MoCHI). Output from EDA.Rmd was used as input for a python script [Create_training_set.py](EDA_output/MoCHI/Create_training_set.py), preparing tables used as input for MoCHI. MoCHI was run in a [mamba environment](EDA_output/MoCHI/mochi.yaml) and the following commands were used to predict fitness values for higher-order variants:
+
+```
+run_mochi.py --model_design model_design_CLN2.txt --output_directory CLN2 --predict
+run_mochi.py --model_design model_design_CLO2.txt --output_directory CLO2 --predict
+run_mochi.py --model_design model_design_LD.txt --output_directory LD --predict
+```
+
+Predictions of these three MoCHI runs were compiled for further R analysis using python scripts [Create_tableMutantCode.py](EDA_output/MoCHI/Create_tableMutantCode.py) and [CompileMoCHIpredictions_oneTable.py](EDA_output/MoCHI/CompileMoCHIpredictions_oneTable.py).
+
 ## Bioinformatic analysis of PacBio data
 
 Files and input/output are collected in [PacBio_code](PacBio_code).
@@ -182,3 +194,4 @@ Followed by analysis using code based on [fitness summary file of nf-core-crispr
 - [doi.org/10.1021/acssynbio.5c00065](https://doi.org/10.1021/acssynbio.5c00065) and [EVmut_inSilico repository](https://github.com/ute-hoffmann/EVmut_inSilico)
 - [MSA Transformer](https://proceedings.mlr.press/v139/rao21a.html?utm_source=miragenews&utm_medium=miragenews&utm_campaign=news)
 - [ProteinNPT repository](https://github.com/OATML-Markslab/ProteinNPT), compare the [manuscript](https://openreview.net/forum?id=AwzbQVuDBk)
+- [MoCHI paper](https://doi.org/10.1186/s13059-024-03444-y) and [repository](https://github.com/lehner-lab/MoCHI)
