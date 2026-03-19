@@ -18,6 +18,10 @@ Data to some of the Figures and Tables shown in Hoffmann & Knave et al. are avai
 | Fig. 2D  | Growth curves extracted from pool for epistatic effect  | [.Rmd file with analyses](code/EDA.Rmd)  | Plot labelled "Epistatic effects and 'strain E'" in [.Rmd file with analyses](code/EDA.Rmd) |
 | Fig. 3A  | Scatter plot normalized weighted mean fitness to EVmutation score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_norm_all_EVcoup.pdf)  |
 | Fig. 3C  | Scatter plot normalized weighted mean fitness to additive score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_additive_combi.pdf)  |
+| Supp. Fig.   | Variance histogram | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/histogram_variance.pdf)  |
+| Supp. Fig.   | adjusted p value histogram | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/diagnostic_plots/pValue_plot.pdf)  |
+| Supp. Fig.   | Scatter plot number barcodes to -Log10(adjusted p value)   | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/diagnostic_plots/scatter_numBarcodes_padj.pdf)  |
+| Supp. Fig.   | Volcano plots of CbbM variants | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/diagnostic_plots/Volcano.pdf)  |
 | Supp. Fig. 2  | Growth curves highlighting K200R/K214R and base variant   | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/all_sgRNAtargets_timeLinePlot.pdf)  |
 | Supp Fig. 3A  | Scatter plot normalized weighted mean fitness to relative solvent accessibility  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/relSAS_norm.pdf)  |
 | Supp. Fig. 3B  | Scatter plot normalized weighted mean fitness to conservation  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/conservation_norm.pdf)  |
@@ -32,8 +36,11 @@ Data to some of the Figures and Tables shown in Hoffmann & Knave et al. are avai
 | Supp. Fig. 9B  | Scatter plot normalized weighted mean fitness to DeepSequence without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_DeepSeq_norm_noV323.pdf)  |
 | Supp. Fig. 9C  | Scatter plot normalized weighted mean fitness to MSA Transformer without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MSA_Transform_norm_noV323.pdf)  |
 | Supp. Fig. 10A  | Scatter plot normalized weighted mean fitness to additive score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_additive_combi.pdf)  |
-| Supp. Fig. 10B  | Scatter plot normalized weighted mean fitness to ProteinNPT predictions, with V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_proteinNPT_norm.pdf)  |
-| Supp. Fig. 10C  | Scatter plot normalized weighted mean fitness to ProteinNPT predictions, without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_proteinNPT_norm_noV323.pdf)  |
+| Supp. Fig.   | Scatter plot normalized weighted mean fitness to MoCHI prediction  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MoCHI_norm.pdf)  |
+| Supp. Fig.   | Scatter plot additive scoreto MoCHI prediction  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MoCHI_additive_score.pdf)  |
+| Supp. Fig. 10A  | Scatter plot normalized weighted mean fitness to ProteinNPT predictions, with V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_proteinNPT_norm.pdf)  |
+| Supp. Fig. 10B  | Scatter plot normalized weighted mean fitness to ProteinNPT predictions, without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_proteinNPT_norm_noV323.pdf)  |
+| Supp. Fig. 10C  | Scatter plot normalized ProteinNPT predictions to additive score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_additiveScore_proteinNPT.pdf)  |
 
 | Table  | Description | Code  | Data  |
 | ------------- | ------------- | ------------- |------------- |
