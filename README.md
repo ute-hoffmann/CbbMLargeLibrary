@@ -18,36 +18,36 @@ Data to some of the Figures and Tables shown in Hoffmann & Knave et al. are avai
 | Fig. 2D  | Growth curves extracted from pool for epistatic effect  | [.Rmd file with analyses](code/EDA.Rmd)  | Plot labelled "Epistatic effects and 'strain E'" in [.Rmd file with analyses](code/EDA.Rmd) |
 | Fig. 3A  | Scatter plot normalized weighted mean fitness to EVmutation score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_norm_all_EVcoup.pdf)  |
 | Fig. 3C  | Scatter plot normalized weighted mean fitness to additive score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_additive_combi.pdf)  |
-| Supp. Fig.   | Variance histogram | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/histogram_variance.pdf)  |
-| Supp. Fig.   | adjusted p value histogram | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/diagnostic_plots/pValue_plot.pdf)  |
-| Supp. Fig.   | Scatter plot number barcodes to -Log10(adjusted p value)   | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/diagnostic_plots/scatter_numBarcodes_padj.pdf)  |
-| Supp. Fig.   | Volcano plots of CbbM variants | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/diagnostic_plots/Volcano.pdf)  |
 | Supp. Fig. 2  | Growth curves highlighting K200R/K214R and base variant   | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/all_sgRNAtargets_timeLinePlot.pdf)  |
-| Supp Fig. 3A  | Scatter plot normalized weighted mean fitness to relative solvent accessibility  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/relSAS_norm.pdf)  |
-| Supp. Fig. 3B  | Scatter plot normalized weighted mean fitness to conservation  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/conservation_norm.pdf)  |
-| Supp. Fig. 4A  | Volcano plot proteomics data generation 4/generation 0  | [.Rmd file for MS data](MS_firstCultivation/plot_MS_data.Rmd)  | [Fig. as pdf](MS_firstCultivation/Figures/Volcano_highCO2_gen0-4_vers2.pdf)  |
-| Supp. Fig. 4B | Volcano plot proteomics data generation 8/generation 0  | [.Rmd file for MS data](MS_firstCultivation/plot_MS_data.Rmd)  | [Fig. as pdf](Volcano_highCO2_gen0-8_vers2.pdf)  |
-| Supp. Fig. 7A  | Correlation EVcouplings to DeepSequence  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_DeepSeq_EVcoup.pdf)   |
-| Supp. Fig. 7B  | Correlation EVcouplings to MSA Transformer  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MSA_Transform_EVcoup.pdf)  |
-| Supp. Fig. 8A  | Scatter plot normalized weighted mean fitness to EVmutation score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_norm_all_EVcoup.pdf)  |
-| Supp. Fig. 8B  | Scatter plot normalized weighted mean fitness to DeepSequence  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_DeepSeq_norm.pdf)  |
-| Supp. Fig. 8C  | Scatter plot normalized weighted mean fitness to MSA Transformer  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MSA_Transform_norm.pdf)  |
-| Supp. Fig. 9A  | Scatter plot normalized weighted mean fitness to EVmutation score without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_norm_all_EVcoup_noV323.pdf)  |
-| Supp. Fig. 9B  | Scatter plot normalized weighted mean fitness to DeepSequence without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_DeepSeq_norm_noV323.pdf)  |
-| Supp. Fig. 9C  | Scatter plot normalized weighted mean fitness to MSA Transformer without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MSA_Transform_norm_noV323.pdf)  |
-| Supp. Fig. 10A  | Scatter plot normalized weighted mean fitness to additive score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_additive_combi.pdf)  |
-| Supp. Fig.   | Scatter plot normalized weighted mean fitness to MoCHI prediction  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MoCHI_norm.pdf)  |
-| Supp. Fig.   | Scatter plot additive scoreto MoCHI prediction  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MoCHI_additive_score.pdf)  |
-| Supp. Fig. 10A  | Scatter plot normalized weighted mean fitness to ProteinNPT predictions, with V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_proteinNPT_norm.pdf)  |
-| Supp. Fig. 10B  | Scatter plot normalized weighted mean fitness to ProteinNPT predictions, without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_proteinNPT_norm_noV323.pdf)  |
-| Supp. Fig. 10C  | Scatter plot normalized ProteinNPT predictions to additive score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_additiveScore_proteinNPT.pdf)  |
+| Supp. Fig. 3A  | Volcano plot proteomics data generation 4/generation 0  | [.Rmd file for MS data](MS_firstCultivation/plot_MS_data.Rmd)  | [Fig. as pdf](MS_firstCultivation/Figures/Volcano_highCO2_gen0-4_vers2.pdf)  |
+| Supp. Fig. 3B | Volcano plot proteomics data generation 8/generation 0  | [.Rmd file for MS data](MS_firstCultivation/plot_MS_data.Rmd)  | [Fig. as pdf](Volcano_highCO2_gen0-8_vers2.pdf)  |
+| Supp. Fig. 4A  | Variance histogram | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/histogram_variance.pdf)  |
+| Supp. Fig. 4B  | adjusted p value histogram | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/diagnostic_plots/pValue_plot.pdf)  |
+| Supp. Fig. 4C  | Scatter plot number barcodes to -Log10(adjusted p value)   | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/diagnostic_plots/scatter_numBarcodes_padj.pdf)  |
+| Supp. Fig. 5  | Volcano plots of CbbM variants | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/diagnostic_plots/Volcano.pdf)  |
+| Supp Fig. 6A  | Scatter plot normalized weighted mean fitness to relative solvent accessibility  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/relSAS_norm.pdf)  |
+| Supp. Fig. 6B  | Scatter plot normalized weighted mean fitness to conservation  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/conservation_norm.pdf)  |
+| Supp. Fig. 9A  | Correlation EVcouplings to DeepSequence  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_DeepSeq_EVcoup.pdf)   |
+| Supp. Fig. 9B  | Correlation EVcouplings to MSA Transformer  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MSA_Transform_EVcoup.pdf)  |
+| Supp. Fig. 10A  | Scatter plot normalized weighted mean fitness to EVmutation score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_norm_all_EVcoup.pdf)  |
+| Supp. Fig. 10B  | Scatter plot normalized weighted mean fitness to DeepSequence  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_DeepSeq_norm.pdf)  |
+| Supp. Fig. 10C  | Scatter plot normalized weighted mean fitness to MSA Transformer  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MSA_Transform_norm.pdf)  |
+| Supp. Fig. 11A  | Scatter plot normalized weighted mean fitness to EVmutation score without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_norm_all_EVcoup_noV323.pdf)  |
+| Supp. Fig. 11B  | Scatter plot normalized weighted mean fitness to DeepSequence without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_DeepSeq_norm_noV323.pdf)  |
+| Supp. Fig. 11C  | Scatter plot normalized weighted mean fitness to MSA Transformer without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MSA_Transform_norm_noV323.pdf)  |
+| Supp. Fig. 12  | Scatter plot normalized weighted mean fitness to additive score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_additive_combi.pdf)  |
+| Supp. Fig. 13A | Scatter plot normalized weighted mean fitness to MoCHI prediction  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MoCHI_norm.pdf)  |
+| Supp. Fig. 13B  | Scatter plot additive scoreto MoCHI prediction  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_MoCHI_additive_score.pdf)  |
+| Supp. Fig. 14A  | Scatter plot normalized weighted mean fitness to ProteinNPT predictions, with V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_proteinNPT_norm.pdf)  |
+| Supp. Fig. 14B  | Scatter plot normalized weighted mean fitness to ProteinNPT predictions, without V323  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_proteinNPT_norm_noV323.pdf)  |
+| Supp. Fig. 14C  | Scatter plot normalized ProteinNPT predictions to additive score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as pdf](EDA_output/pdf/scatter_additiveScore_proteinNPT.pdf)  |
 
 | Table  | Description | Code  | Data  |
 | ------------- | ------------- | ------------- |------------- |
 | Supp. Table 1  | Positions used in the DMS part of the library  | see below (Library design)  |  |
 | Supp. Table 2  | Overview of library composition  | [.Rmd file with analyses](code/EDA.Rmd)  |   |
-| Supp. Table 3  | Overview of variants with higher fitness value than base variant in different conditions  | [.Rmd file with analyses](code/EDA.Rmd)  |   |
-| Supp. Table 4  | Proteomics data after 4 and 8 generations  | [.Rmd file for MS data](MS_firstCultivation/plot_MS_data.Rmd)  | [File as csv](MS_firstCultivation/tables/CCM_table_forPaper.csv), data for all proteins in MS comparisons in [same directory](MS_firstCultivation/tables)  |
+| Supp. Table 3  | Proteomics data after 4 and 8 generations  | [.Rmd file for MS data](MS_firstCultivation/plot_MS_data.Rmd)  | [File as csv](MS_firstCultivation/tables/CCM_table_forPaper.csv), data for all proteins in MS comparisons in [same directory](MS_firstCultivation/tables)  |
+| Supp. Table 4  | Overview of variants with higher fitness value than base variant in different conditions  | [.Rmd file with analyses](code/EDA.Rmd)  |   |
 | Supp. Table 5  | Variants of CbbMbase with the highest normalized fitness score  | [.Rmd file with analyses](code/EDA.Rmd)  | [File as csv](EDA_output/goodVariants.csv)  |
 
 ## Library design, zero-shot predictions, ProteinNPT and MoCHI
